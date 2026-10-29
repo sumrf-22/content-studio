@@ -199,7 +199,8 @@ Example:
 """
     raw = generate(prompt)
     ideas = _parse_llm_output(raw, topic)
-    # Keep at most 5; drop empty entries; dedupe by lowercase title
+    # Mock mode offers one idea per supported format (7). Keep at most 7;
+    # drop empty entries; dedupe by lowercase title.
     seen = set()
     out = []
     for i in ideas:
@@ -207,4 +208,4 @@ Example:
         if t and t not in seen:
             seen.add(t)
             out.append(i)
-    return out[:5]
+    return out[:7]

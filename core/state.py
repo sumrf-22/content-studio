@@ -1,12 +1,21 @@
 import json
 import os
 import tempfile
+import threading
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 DATA.mkdir(exist_ok=True)
 STATE = DATA / "state.json"
+
+# Flask's development server is threaded, so a save can race a concurrent
+# read. On Windows os.replace fails with PermissionError while another thread
+# holds the destination file open, so writes retry briefly instead of 500ing.
+_SAVE_LOCK = threading.Lock()
+_REPLACE_ATTEMPTS = 20
+_REPLACE_DELAY = 0.05
 
 
 def _now():
@@ -38,22 +47,31 @@ def load():
 
 def save(state):
     DATA.mkdir(exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=DATA, prefix=".state-", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(state, handle, indent=2, ensure_ascii=False)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, STATE)
-    except BaseException:
-        # Remove the partial temp file on failure, then propagate the error.
+    with _SAVE_LOCK:
+        fd, tmp_path = tempfile.mkstemp(
+            dir=DATA, prefix=".state-", suffix=".tmp"
+        )
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(state, handle, indent=2, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            for attempt in range(_REPLACE_ATTEMPTS):
+                try:
+                    os.replace(tmp_path, STATE)
+                    break
+                except PermissionError:
+                    if attempt == _REPLACE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(_REPLACE_DELAY)
+        except BaseException:
+            # Remove the partial temp file on failure, then propagate the error.
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
 
 def add_activity(state, message):

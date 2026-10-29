@@ -44,39 +44,42 @@ def state():
 
 @app.get("/api/asset/<path:filename>")
 def serve_asset(filename):
-    """Serve local preview assets with path validation.
+    """Serve generated preview assets from allowlisted project folders.
 
-    Only files under the project static/assets directory are accessible.
-    Avoids file:// URLs in the browser.
+    Allowed locations are ``data/renders/`` (Kite output) and
+    ``static/assets/`` (legacy assets). Anything else is rejected so the
+    route cannot read arbitrary files.
     """
-    # Define the allowed assets directory
-    ASSETS_DIR = os.path.join(BASE_DIR, "static", "assets")
+    project_root = os.path.realpath(BASE_DIR)
+    allowed_roots = [
+        os.path.realpath(os.path.join(project_root, "data", "renders")),
+        os.path.realpath(os.path.join(project_root, "static", "assets")),
+    ]
 
-    # Prevent directory traversal
-    if ".." in filename or filename.startswith("/") or "\\" in filename:
+    if not filename or ".." in filename or "\\" in filename:
+        return jsonify({"error": "invalid path"}), 400
+    if filename.startswith("/") or os.path.isabs(filename) or ":" in filename:
         return jsonify({"error": "invalid path"}), 400
 
-    safe_path = os.path.normpath(filename)
+    normalized = filename.replace("\\", "/")
 
-    full_path = os.path.join(ASSETS_DIR, safe_path)
+    if normalized.startswith("data/renders/") or normalized.startswith("static/assets/"):
+        candidate = os.path.realpath(os.path.join(project_root, normalized))
+    else:
+        # Legacy callers pass a path relative to static/assets.
+        candidate = os.path.realpath(
+            os.path.join(project_root, "static", "assets", normalized)
+        )
 
-    # Resolve to absolute path and verify it is inside ASSETS_DIR
-    try:
-        real_path = os.path.realpath(full_path)
-        real_assets = os.path.realpath(ASSETS_DIR)
-        if not real_path.startswith(real_assets + os.sep) and real_path != real_assets:
-            return jsonify({"error": "path outside assets directory"}), 403
-    except Exception:
-        return jsonify({"error": "invalid path"}), 400
+    if not any(
+        candidate == root or candidate.startswith(root + os.sep)
+        for root in allowed_roots
+    ):
+        return jsonify({"error": "path outside asset directories"}), 403
 
-    if not os.path.exists(real_path):
+    if not os.path.isfile(candidate):
         return jsonify({"error": "not found"}), 404
 
-    if not os.path.isfile(real_path):
-        return jsonify({"error": "not a file"}), 404
-
-    # Guess content type from extension
-    ext = os.path.splitext(safe_path)[1].lower()
     mime_map = {
         ".png": "image/png",
         ".jpg": "image/jpeg",
@@ -84,11 +87,13 @@ def serve_asset(filename):
         ".gif": "image/gif",
         ".webp": "image/webp",
         ".svg": "image/svg+xml",
+        ".txt": "text/plain; charset=utf-8",
     }
+    ext = os.path.splitext(candidate)[1].lower()
     mime = mime_map.get(ext, "application/octet-stream")
 
-    with open(real_path, "rb") as f:
-        return f.read(), 200, {"Content-Type": mime}
+    with open(candidate, "rb") as handle:
+        return handle.read(), 200, {"Content-Type": mime}
 
 
 @app.post("/api/idea")
@@ -135,7 +140,7 @@ def action(item_id):
 
         add_activity(
             s,
-            "Atlas generated 5 ideas for item " + str(item_id)
+            "Atlas generated " + str(len(ideas)) + " ideas for item " + str(item_id)
         )
 
     # ---------------------------------------------------------
@@ -177,16 +182,10 @@ def action(item_id):
     # ---------------------------------------------------------
     elif action == "approve_copy":
 
-        # For formats that kite renders from structured dict (TEXT_POST,
-        # REEL, INFOGRAPHIC, MEME, STORY_POLL) pass the dict straight through.
-        # For CAROUSEL we convert to the old string format (SLIDE 1..5)
-        # so Kite's string path can extract slides.
+        # Vera already returns the canonical dict for every format, so Kite
+        # gets the dict directly (no lossy re-serialization).
         fmt = item.get("format", "CAROUSEL").upper()
-        if fmt == "CAROUSEL":
-            copy_text = _format_copy_for_kite(item["copy"], fmt)
-            design_result = kite(item_id, copy_text, fmt)
-        else:
-            design_result = kite(item_id, item["copy"], fmt)
+        design_result = kite(item_id, item["copy"], fmt)
 
         item["design"] = design_result
         item["stage"] = "design"
@@ -194,7 +193,7 @@ def action(item_id):
 
         add_activity(
             s,
-            "Kite rendered " + str(design_result.get("count", 0)) + " slides and uploaded them to ImgBB for item " + str(item_id)
+            "Kite rendered " + str(design_result.get("count", 0)) + " assets for item " + str(item_id)
         )
 
     # ---------------------------------------------------------
@@ -216,11 +215,13 @@ def action(item_id):
     # ---------------------------------------------------------
     elif action == "publish":
 
-        orin(item)
-
+        # Write the published snapshot only after the item reaches its final
+        # state, so the snapshot is not a stale pre-publish copy.
         item["published"] = True
         item["stage"] = "done"
         item["status"] = "published_local"
+
+        orin(item)
 
         add_activity(
             s,
@@ -240,7 +241,7 @@ def action(item_id):
         if stage in ("idea", "idea_review"):
             ideas = atlas(topic)
             item["ideas"] = ideas
-            add_activity(s, f"Atlas regenerated 5 ideas for item {item_id}")
+            add_activity(s, f"Atlas regenerated {len(ideas)} ideas for item {item_id}")
         elif stage == "copy":
             if not selected_idea or not fmt:
                 return jsonify({"error": "cannot regenerate copy: missing selected idea or format"}), 400
@@ -250,8 +251,7 @@ def action(item_id):
         elif stage == "design":
             if not item.get("copy"):
                 return jsonify({"error": "cannot regenerate design: no copy data"}), 400
-            copy_text = _format_copy_for_kite(item["copy"], fmt or "CAROUSEL")
-            design_result = kite(item_id, copy_text, fmt or "CAROUSEL")
+            design_result = kite(item_id, item["copy"], fmt or "CAROUSEL")
             item["design"] = design_result
             add_activity(s, f"Kite regenerated design for item {item_id} (reject -> regenerate)")
         else:
@@ -276,236 +276,3 @@ def get_item(item_id):
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
-
-
-def _format_copy_for_kite(copy_data, fmt="CAROUSEL"):
-    """Convert Vera's new structured copy format to old string format for Kite.
-
-    Kite's _extract_slides() expects SLIDE 1..5 markers in plain text.
-    This helper converts the new structured dict back to that format.
-    """
-    if not copy_data:
-        return ""
-
-    # If it's already a string, return as-is
-    if isinstance(copy_data, str):
-        return copy_data
-
-    # If it's a dict with structured fields, convert to string format
-    if isinstance(copy_data, dict):
-        fmt = fmt.upper()
-        if fmt == "CAROUSEL":
-            lines = []
-            slides = copy_data.get("slides", [])
-            for i, slide in enumerate(slides, 1):
-                # slide can be a string or a dict
-                if isinstance(slide, dict):
-                    headline = slide.get("headline", "") or slide.get("slide_1_headline", "")
-                    subheadline = slide.get("subheadline", "") or slide.get("slide_1_subheadline", "")
-                    body = slide.get("body", "") or slide.get("slide_1_body", "")
-                    cta = slide.get("cta", "") or slide.get("slide_5_cta", "")
-                    visual = slide.get("visual_direction", "") or slide.get("slide_1_direction", "")
-                else:
-                    # slide is a string - use first line as headline
-                    slide_lines = str(slide).split("\n")
-                    headline = slide_lines[0].strip() if slide_lines else ""
-                    subheadline = ""
-                    body = ""
-                    cta = ""
-                    visual = ""
-                
-                lines.append(f"SLIDE {i}")
-                lines.append(f"Headline: {headline}")
-                if subheadline:
-                    lines.append(f"Sub-headline: {subheadline}")
-                if body:
-                    lines.append(f"Body: {body}")
-                if visual:
-                    lines.append(f"Visual direction: {visual}")
-                lines.append("")
-
-            caption = copy_data.get("caption", "")
-            if caption:
-                lines.append("CAPTION")
-                lines.append(caption)
-                lines.append("")
-
-            hashtags = copy_data.get("hashtags", "")
-            if hashtags:
-                lines.append("HASHTAGS")
-                lines.append(hashtags)
-
-            return "\n".join(lines)
-
-        elif fmt == "REEL":
-            hook = copy_data.get("hook", "")
-            script = copy_data.get("script", "")
-            scenes = copy_data.get("scenes", [])
-            direction = copy_data.get("visual_action_direction", "")
-            text = copy_data.get("on_screen_text", "")
-            cta = copy_data.get("cta", "")
-            caption = copy_data.get("caption", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("HOOK")
-            lines.append(hook)
-            lines.append("")
-            lines.append("SCRIPT")
-            lines.append(script)
-            lines.append("")
-            lines.append("SCENES")
-            for i, scene in enumerate(scenes, 1):
-                lines.append(f"Scene {i}: {scene}")
-            lines.append("")
-            lines.append("VISUAL_ACTION_DIRECTION")
-            lines.append(direction)
-            lines.append("")
-            lines.append("ON_SCREEN_TEXT")
-            lines.append(text)
-            lines.append("")
-            lines.append("CTA")
-            lines.append(cta)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-        elif fmt == "SINGLE_IMAGE":
-            headline = copy_data.get("headline", "")
-            supporting = copy_data.get("supporting_text", "")
-            concept = copy_data.get("visual_concept", "")
-            cta = copy_data.get("cta", "")
-            caption = copy_data.get("caption", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("HEADLINE")
-            lines.append(headline)
-            lines.append("")
-            lines.append("SUPPORTING_TEXT")
-            lines.append(supporting)
-            lines.append("")
-            lines.append("VISUAL_CONCEPT")
-            lines.append(concept)
-            lines.append("")
-            lines.append("CTA")
-            lines.append(cta)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-        elif fmt == "INFOGRAPHIC":
-            headline = copy_data.get("headline", "") or copy_data.get("title", "")
-            sections = copy_data.get("sections_data_points", "")
-            structure = copy_data.get("visual_structure", "")
-            cta = copy_data.get("cta", "")
-            caption = copy_data.get("caption", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("TITLE")
-            lines.append(headline)
-            lines.append("")
-            lines.append("SECTIONS_DATA_POINTS")
-            lines.append(sections)
-            lines.append("")
-            lines.append("VISUAL_STRUCTURE")
-            lines.append(structure)
-            lines.append("")
-            lines.append("CTA")
-            lines.append(cta)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-        elif fmt == "TEXT_POST":
-            post = copy_data.get("post_text", "")
-            hook = copy_data.get("hook_opening", "")
-            cta = copy_data.get("cta", "")
-            caption = copy_data.get("caption_text", "") or copy_data.get("caption", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("POST_TEXT")
-            lines.append(post)
-            lines.append("")
-            lines.append("HOOK_OPENING")
-            lines.append(hook)
-            lines.append("")
-            lines.append("CTA")
-            lines.append(cta)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-        elif fmt == "MEME":
-            setup = copy_data.get("setup", "")
-            punchline = copy_data.get("punchline", "")
-            concept = copy_data.get("visual_concept", "")
-            caption = copy_data.get("caption_text", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("SETUP")
-            lines.append(setup)
-            lines.append("")
-            lines.append("PUNNACLE")
-            lines.append(punchline)
-            lines.append("")
-            lines.append("VISUAL_CONCEPT")
-            lines.append(concept)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-        elif fmt == "STORY_POLL":
-            frames = copy_data.get("frame_sequence", [])
-            text = copy_data.get("text", "")
-            poll = copy_data.get("poll_question", copy_data.get("polls", ""))
-            cta = copy_data.get("cta", "")
-            caption = copy_data.get("caption", "")
-            hashtags = copy_data.get("hashtags", "")
-
-            lines = []
-            lines.append("FRAME_SEQUENCE")
-            for i, frame in enumerate(frames, 1):
-                lines.append(f"Frame {i}: {frame}")
-            lines.append("")
-            lines.append("TEXT")
-            lines.append(text)
-            lines.append("")
-            lines.append("POLL_QUESTION")
-            lines.append(poll)
-            lines.append("")
-            lines.append("CTA")
-            lines.append(cta)
-            lines.append("")
-            lines.append("CAPTION")
-            lines.append(caption)
-            lines.append("")
-            lines.append("HASHTAGS")
-            lines.append(hashtags)
-            return "\n".join(lines)
-
-    return str(copy_data or "")
-

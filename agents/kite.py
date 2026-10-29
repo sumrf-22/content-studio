@@ -6,6 +6,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from config import IMGBB_API_KEY
+from core import models
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +15,14 @@ RENDER_DIR = BASE_DIR / "data" / "renders"
 WIDTH = 1080
 HEIGHT = 1350
 HEIGHT_VERTICAL = 1920
+
+
+def _rel(path):
+    """Store asset paths relative to the project root, using forward slashes."""
+    try:
+        return Path(path).resolve().relative_to(BASE_DIR).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _font(size, bold=False):
@@ -281,64 +290,6 @@ def _render_slide(slide, index, output_path):
     )
 
 
-def _parse_structured_copy(copy_data):
-    """
-    Parse structured copy dict (from Vera) into format-specific rendering data.
-    """
-    if not isinstance(copy_data, dict):
-        return None
-
-    fmt = copy_data.get("format", "CAROUSEL")
-
-    if fmt == "CAROUSEL":
-        slides = copy_data.get("slides", [])
-        if isinstance(slides, list) and slides:
-            return {
-                "slides": slides,
-                "format": "CAROUSEL",
-            }
-
-    elif fmt == "REEL":
-        scenes = copy_data.get("scenes", [])
-        if isinstance(scenes, list) and scenes:
-            return {
-                "scenes": scenes,
-                "format": "REEL",
-            }
-
-    elif fmt == "SINGLE_IMAGE":
-        return {
-            "format": "SINGLE_IMAGE",
-        }
-
-    elif fmt == "INFOGRAPHIC":
-        sections = copy_data.get("sections_data_points", "")
-        return {
-            "format": "INFOGRAPHIC",
-            "sections": sections,
-        }
-
-    elif fmt == "TEXT_POST":
-        return {
-            "format": "TEXT_POST",
-        }
-
-    elif fmt == "MEME":
-        return {
-            "format": "MEME",
-        }
-
-    elif fmt == "STORY_POLL":
-        frames = copy_data.get("frame_sequence", [])
-        if isinstance(frames, list) and frames:
-            return {
-                "frames": frames,
-                "format": "STORY_POLL",
-            }
-
-    return None
-
-
 def _render_single_image(copy_data, output_path):
     """
     Single-image format: exactly one 1080x1350 asset.
@@ -348,7 +299,7 @@ def _render_single_image(copy_data, output_path):
     overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rounded_rectangle(
-        (55, 70, 890, 1110),
+        (55, 70, 1025, 1110),
         radius=35,
         fill=(0, 0, 0, 150)
     )
@@ -393,7 +344,7 @@ def _render_infographic(copy_data, output_path):
     overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rounded_rectangle(
-        (55, 70, 890, 1110),
+        (55, 70, 1025, 1110),
         radius=35,
         fill=(0, 0, 0, 150)
     )
@@ -421,7 +372,7 @@ def _render_infographic(copy_data, output_path):
     # Draw section blocks
     if sections:
         font_section = _font(46)
-        for section in sections.split("\\n"):
+        for section in sections.splitlines():
             if section.strip():
                 for line in _wrap(section.strip(), font_section, max_width):
                     draw.text((95, y), line, font=font_section, fill=(255, 215, 0))
@@ -453,24 +404,24 @@ def _render_infographic(copy_data, output_path):
 def _render_text_post(copy_data, output_path):
     """
     Text-post format: text-first design package.
-    No image asset; creates a local text file with the post content.
+
+    No image asset; writes the post content as text inside the item's own
+    render folder so every format has its own output directory.
     """
-    text = copy_data.get("post_text", "")
     hook = copy_data.get("hook_opening", "")
+    text = copy_data.get("post_text", "")
     cta = copy_data.get("cta", "")
     caption = copy_data.get("caption", "")
     hashtags = copy_data.get("hashtags", "")
 
-    item_dir = RENDER_DIR / "item_placeholder"
-    item_dir.mkdir(parents=True, exist_ok=True)
-
-    text_path = item_dir / "text_post.txt"
+    text_path = Path(output_path)
+    text_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = []
     if hook:
         lines.append(f"HOOK: {hook}")
     if text:
-        lines.append(f"POST_TEXT: {text}")
+        lines.append(f"POST_TEXT:\n{text}")
     if cta:
         lines.append(f"CTA: {cta}")
     if caption:
@@ -478,10 +429,14 @@ def _render_text_post(copy_data, output_path):
     if hashtags:
         lines.append(f"HASHTAGS: {hashtags}")
 
-    text_path.write_text("\\n\\n".join(lines), encoding="utf-8")
+    body = "\n\n".join(lines)
+    text_path.write_text(body, encoding="utf-8")
 
     return {
-        "text_file": str(text_path),
+        "provider": "local-pillow",
+        "text_file": _rel(text_path),
+        "text_preview": body[:400],
+        "slides": [],
         "count": 0,
     }
 
@@ -496,7 +451,7 @@ def _render_meme(copy_data, output_path):
     overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rounded_rectangle(
-        (55, 70, 890, 1110),
+        (55, 70, 1025, 1110),
         radius=35,
         fill=(0, 0, 0, 150)
     )
@@ -538,10 +493,11 @@ def _render_meme(copy_data, output_path):
     img.convert("RGB").save(output_path, "PNG", optimize=True)
 
 
-def _render_story_poll(copy_data, output_path):
+def _render_story_poll(copy_data, output_dir):
     """
     Story-poll format: multiple 1080x1920 vertical frame assets.
-    Preserves poll/question/CTA information.
+
+    Frames are written into the item's own render folder.
     """
     frames = copy_data.get("frame_sequence", [])
     text = copy_data.get("text", "")
@@ -549,7 +505,7 @@ def _render_story_poll(copy_data, output_path):
     cta = copy_data.get("cta", "")
     caption = copy_data.get("caption", "")
 
-    item_dir = RENDER_DIR / "item_pending"
+    item_dir = Path(output_dir)
     item_dir.mkdir(parents=True, exist_ok=True)
 
     results = []
@@ -562,7 +518,7 @@ def _render_story_poll(copy_data, output_path):
         overlay = Image.new("RGBA", (WIDTH, HEIGHT_VERTICAL), (0, 0, 0, 0))
         od = ImageDraw.Draw(overlay)
         od.rounded_rectangle(
-            (55, 70, 890, 1710),
+            (55, 70, 1025, 1710),
             radius=35,
             fill=(0, 0, 0, 150)
         )
@@ -616,11 +572,12 @@ def _render_story_poll(copy_data, output_path):
 
         results.append({
             "frame": i,
-            "file": str(frame_path),
+            "file": _rel(frame_path),
             "url": None,
         })
 
     return {
+        "provider": "local-pillow",
         "frames": results,
         "count": len(results),
     }
@@ -651,22 +608,22 @@ def run(item_id, copy_data, format=None):
 
     Args:
         item_id: Item identifier for directory naming.
-        copy_data: Raw copy text (old carousel format) OR structured dict (new format).
-        format: Optional format override. If None, detected from copy_data or defaults to CAROUSEL.
+        copy_data: Structured copy dict from Vera (legacy plain text is still
+            accepted for carousel copy).
+        format: Optional format override. If None, detected from copy_data.
 
     Returns:
-        Dict with provider, results, and count.
+        Dict with provider, rendered assets, and count.
     """
-    # Detect format
     if format is None:
         if isinstance(copy_data, dict):
             format = copy_data.get("format", "CAROUSEL")
         else:
             format = "CAROUSEL"
 
-    fmt = format.upper().strip()
+    fmt = str(format).upper().strip()
 
-    # Backward compatible: if copy_data is a string (old format), parse as carousel
+    # Backward compatible: a string is treated as plain carousel copy.
     if isinstance(copy_data, str):
         slides = _extract_slides(copy_data)
         if not slides:
@@ -679,11 +636,10 @@ def run(item_id, copy_data, format=None):
         for index, slide in enumerate(slides):
             path = item_dir / f"slide_{index + 1}.png"
             _render_slide(slide, index, path)
-            public_url = _upload_imgbb(path)
             results.append({
                 "slide": index + 1,
-                "file": str(path),
-                "url": public_url,
+                "file": _rel(path),
+                "url": _upload_imgbb(path),
                 "visual_prompt": slide.get("visual", ""),
             })
 
@@ -693,37 +649,31 @@ def run(item_id, copy_data, format=None):
             "count": len(results),
         }
 
-    # Structured dict path - format-specific rendering
-    parsed = _parse_structured_copy(copy_data)
-    if parsed is None:
-        # Malformed/unrecognized structured copy - fall back to safe string
-        if isinstance(copy_data, dict):
-            return {
-                "provider": "local-pillow",
-                "slides": [],
-                "count": 0,
-                "note": "Unknown structured format; no assets created",
-            }
-        raise ValueError("Kite could not understand the copy data.")
+    # Validate at the renderer boundary so no branch below can read a field
+    # name Vera did not produce.
+    try:
+        copy_data = models.normalize_copy(copy_data, fmt)
+    except (ValueError, TypeError) as exc:
+        return {
+            "provider": "local-pillow",
+            "slides": [],
+            "count": 0,
+            "note": f"invalid {fmt} copy: {exc}",
+        }
 
-    fmt = parsed.get("format", "CAROUSEL")
-
-    # Create render directory
     item_dir = RENDER_DIR / f"item_{item_id}"
     item_dir.mkdir(parents=True, exist_ok=True)
 
     if fmt == "CAROUSEL":
-        slides = parsed.get("slides", [])
         results = []
-        for index, slide in enumerate(slides):
+        for index, slide in enumerate(copy_data["slides"]):
             path = item_dir / f"slide_{index + 1}.png"
             _render_slide(slide, index, path)
-            public_url = _upload_imgbb(path)
             results.append({
                 "slide": index + 1,
-                "file": str(path),
-                "url": public_url,
-                "visual_prompt": slide.get("visual", ""),
+                "file": _rel(path),
+                "url": _upload_imgbb(path),
+                "visual_prompt": slide.get("visual_direction", ""),
             })
         return {
             "provider": "local-pillow",
@@ -731,39 +681,48 @@ def run(item_id, copy_data, format=None):
             "count": len(results),
         }
 
-    elif fmt == "SINGLE_IMAGE":
+    if fmt == "SINGLE_IMAGE":
         path = item_dir / "single_image.png"
         _render_single_image(copy_data, path)
-        public_url = _upload_imgbb(path)
         return {
             "provider": "local-pillow",
             "slides": [{
                 "slide": 1,
-                "file": str(path),
-                "url": public_url,
+                "file": _rel(path),
+                "url": _upload_imgbb(path),
             }],
             "count": 1,
         }
 
-    elif fmt == "INFOGRAPHIC":
+    if fmt == "INFOGRAPHIC":
         path = item_dir / "infographic.png"
         _render_infographic(copy_data, path)
-        public_url = _upload_imgbb(path)
         return {
             "provider": "local-pillow",
             "slides": [{
                 "slide": 1,
-                "file": str(path),
-                "url": public_url,
+                "file": _rel(path),
+                "url": _upload_imgbb(path),
             }],
             "count": 1,
         }
 
-    elif fmt == "REEL":
-        scenes = parsed.get("scenes", [])
+    if fmt == "MEME":
+        path = item_dir / "meme.png"
+        _render_meme(copy_data, path)
+        return {
+            "provider": "local-pillow",
+            "slides": [{
+                "slide": 1,
+                "file": _rel(path),
+                "url": _upload_imgbb(path),
+            }],
+            "count": 1,
+        }
+
+    if fmt == "REEL":
         results = []
-        for i, scene in enumerate(scenes, 1):
-            # Scene card asset
+        for i, scene in enumerate(copy_data["scenes"], 1):
             card_path = item_dir / f"scene_{i}.png"
             _create_vertical_scene_scene_card(
                 scene_num=i,
@@ -771,59 +730,40 @@ def run(item_id, copy_data, format=None):
                 on_screen_text=scene.get("on_screen_text", ""),
             ).save(card_path, "PNG", optimize=True)
 
-            # Also save the scene text as a fallback metadata file
             scene_meta = item_dir / f"scene_{i}.txt"
             scene_meta.write_text(
-                f"Scene {i}: {scene.get('visual_direction', '')}\\n"
-                f"On-screen text: {scene.get('on_screen_text', '')}\\n"
-                f"Duration: {scene.get('duration', '')}\\n",
-                encoding="utf-8"
+                "\n".join([
+                    f"Scene {i}: {scene.get('visual_direction', '')}",
+                    f"On-screen text: {scene.get('on_screen_text', '')}",
+                    f"Duration: {scene.get('duration', '')}",
+                ]) + "\n",
+                encoding="utf-8",
             )
 
             results.append({
                 "scene": i,
-                "file": str(card_path),
-                "scene_card": str(card_path),
-                "scene_meta": str(scene_meta),
+                "file": _rel(card_path),
+                "scene_card": _rel(card_path),
+                "scene_meta": _rel(scene_meta),
                 "duration": scene.get("duration", ""),
                 "url": None,
             })
+
         return {
             "provider": "local-pillow",
             "scenes": results,
             "count": len(results),
         }
 
-    elif fmt == "TEXT_POST":
+    if fmt == "TEXT_POST":
         return _render_text_post(copy_data, item_dir / "text_post.txt")
 
-    elif fmt == "MEME":
-        path = item_dir / "meme.png"
-        _render_meme(copy_data, path)
-        public_url = _upload_imgbb(path)
-        return {
-            "provider": "local-pillow",
-            "slides": [{
-                "slide": 1,
-                "file": str(path),
-                "url": public_url,
-            }],
-            "count": 1,
-        }
+    if fmt == "STORY_POLL":
+        return _render_story_poll(copy_data, item_dir)
 
-    elif fmt == "STORY_POLL":
-        return _render_story_poll(copy_data, item_dir / "story_poll")
-
-    # Fallback: unknown format - safe, no crash
     return {
         "provider": "local-pillow",
         "slides": [],
         "count": 0,
         "note": f"Unknown format '{fmt}'; no assets created",
-    }
-
-    return {
-        "provider": "local-pillow",
-        "slides": results,
-        "count": len(results),
     }

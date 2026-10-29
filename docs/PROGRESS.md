@@ -123,3 +123,124 @@ regenerated item 4's ideas. The verified pre-change backup remains at
 - Phase 2: mock format routing, per-item folders, real newlines, activity field
   names, Orin snapshot ordering, Vera/renderer schema alignment, `run.py` paths,
   and preview/asset serving.
+
+## Phase 2 — Formats and rendering (2026-10-29)
+
+**Status:** complete.
+
+### Reproductions (recorded before fixing)
+
+1. **Mock format routing ignored the selected format.** Asking for
+   `REEL`/`SINGLE_IMAGE`/`MEME` returned the same carousel text, so Vera produced
+   carousel-shaped copy for every format. The mock matched the word "caption",
+   which appears in every Vera prompt.
+2. **Placeholder output folders.** `TEXT_POST` wrote into
+   `data/renders/item_placeholder/text_post.txt` and `STORY_POLL` wrote frames
+   into `data/renders/item_pending/`, so two items shared one folder and the item
+   ID never appeared in the path.
+3. **Literal `\n` in text artifacts.** `data/renders/.../text_post.txt` contained
+   `HOOK: ...\n\nPOST_TEXT: ...` on one line instead of real line breaks.
+4. **Activity entries never rendered.** `/api/state` returned
+   `{"time", "message"}`, while the dashboard read `act.timestamp`/`act.text`, so
+   every row showed "Just now" with an empty message.
+5. **Publish snapshot was stale.** `orin()` ran before the item moved to
+   `done`/`published_local`, so `data/published/item_<id>.json` recorded the
+   pre-publish stage.
+6. **Vera/renderer field mismatch.** Vera returned `visual_direction` while
+   Kite's dict path expected other names; `REEL` raised
+   `AttributeError: 'str' object has no attribute 'get'` because scenes were
+   strings, not dicts.
+7. **`run.py` printed the wrong folders.** Startup logged
+   `...\content_studio\templates` for the template dir even though the real
+   templates live one level deeper.
+8. **No working previews.** Kite stored absolute Windows paths; `/api/asset`
+   resolved everything under `static/assets/`, so every preview returned 404 and
+   the design preview grid was empty.
+
+Found during acceptance of this phase (also fixed):
+
+9. **`POST /api/idea` 500 under concurrent reads.** Server log at 09:55:30:
+   `PermissionError: [WinError 5] ... os.replace(...state.json)` raised from
+   `core/state.py:49` while `/api/state` was being polled. Windows refuses the
+   replace while another thread holds the destination open.
+10. **`ReferenceError: state is not defined`.** Clicking the notification bell
+    threw at `index.html:735`; `state` was local to `loadState()`. The search
+    handler had the same defect at line 855.
+
+### Changes
+
+- `core/models.py` (new): one canonical copy shape per format,
+  `normalize_copy()`, and `fallback_copy()`.
+- `core/llm.py`: Vera's mock routes on the exact `OUTPUT FORMAT - <FORMAT>`
+  string and has a block for all seven formats; Atlas' generic fallback returns
+  one idea per format.
+- `agents/vera.py`: section-based plain-text parser (`_sections`, `_parse_header`,
+  `_parse_carousel`, `_build_copy`, `_detect_format`); output is normalized
+  through `core.models` and falls back to a valid copy dict on parse failure.
+- `agents/kite.py`: normalizes copy at the renderer boundary; removed the old
+  `_parse_structured_copy`; per-item folders via `RENDER_DIR / f"item_{item_id}"`;
+  TEXT_POST/STORY_POLL write into the item folder; real newlines; REEL scenes stay
+  dicts; infographic splits on lines; asset paths stored project-relative through
+  `_rel()`.
+- `dashboard/app.py`: allowlisted `/api/asset` (`data/renders/`, `static/assets/`)
+  with `.txt` MIME; `orin()` runs after the final state; Kite receives the copy
+  dict directly; removed `_format_copy_for_kite`; activity counts use
+  `len(ideas)`.
+- `agents/atlas.py`: keeps up to seven ideas so every format can be selected.
+- `core/state.py`: `save()` serializes writes with a lock and retries
+  `os.replace` on `PermissionError` for up to 1 s.
+- `run.py`: correct `BASE_DIR` for the startup log.
+- `templates/index.html`: `assetUrl()`, `designFiles()`, `copySnippet()`;
+  activity reads `time`/`message`; design previews render images or text for every
+  format; content-card thumbnails come from the design; `lastState` backs the
+  notification and search handlers.
+- `static/style.css`: `.preview-carousel { width: 100% }`, `.preview-text`.
+- `tests/test_phase2.py` (new): canonical shapes, one idea per format, per-format
+  render folders, no placeholder folders, project-relative `_rel()`, and
+  mixed-case header parsing.
+
+### Verification
+
+Browser session, mock mode, UI only (create → Generate Ideas → select idea →
+Approve Copy), one fresh item per format:
+
+| Item | Format | Output folder | Assets | Preview |
+| --- | --- | --- | --- | --- |
+| 9 | CAROUSEL | `item_9` | 3 slides | 1080×1350 loaded |
+| 10 | SINGLE_IMAGE | `item_10` | 1 image | 1080×1350 loaded |
+| 11 | REEL | `item_11` | 3 scene cards + 3 scene txt | 1080×1350 loaded |
+| 12 | INFOGRAPHIC | `item_12` | 1 image | 1080×1350 loaded |
+| 13 | TEXT_POST | `item_13` | `text_post.txt` | text preview, real newlines |
+| 14 | MEME | `item_14` | 1 image | 1080×1350 loaded |
+| 15 | STORY_POLL | `item_15` | 2 frames | 1080×1920 loaded |
+
+All seven then went through Approve Design and Publish. Every item ended at
+`stage=done`, `status=published_local`, `published=true`, and each
+`data/published/item_<id>.json` records that final state. No
+`item_placeholder`/`item_pending` folder was created. A clean page reload plus
+notification and search interactions produced zero console errors, and all
+captured `/api/` responses were < 400.
+
+- `pytest -q`: `25 passed in 56.32s`.
+
+### Data changes
+
+Created items 9–15 (`Format sweep …`) and their render folders and publish
+snapshots. Item 4 remains at `copy` from earlier manual testing. The Phase 0
+backup at `data/_backup_20261029_092442/` is unchanged.
+
+### Known leftovers (deferred)
+
+- Legacy `data/renders/item_placeholder/` and `item_pending/` folders from before
+  the fix still exist on disk; nothing writes to them now.
+- Stray `data/renders/item_*_slide_1.png` files from an older renderer.
+- REEL scene cards are 1080×1350 while story frames are 1080×1920. Production
+  reels need 1080×1920; tracked for the renderer phase.
+- Items 1/2 keep legacy flat copy dicts; normalization handles them.
+
+### Blockers
+- None.
+
+### Next steps
+- Phase 3: storage/repository work and the remaining audit issues (CSS duplicates,
+  sidebar placeholders, legacy artifact cleanup).

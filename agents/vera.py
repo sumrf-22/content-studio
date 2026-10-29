@@ -1,17 +1,12 @@
 
 
+import re
+
+from core import models
 from core.llm import generate
 
 
-SUPPORTED_FORMATS = [
-    "CAROUSEL",
-    "SINGLE_IMAGE",
-    "REEL",
-    "INFOGRAPHIC",
-    "TEXT_POST",
-    "MEME",
-    "STORY_POLL",
-]
+SUPPORTED_FORMATS = list(models.SUPPORTED_FORMATS)
 
 
 def _build_format_prompt(fmt, topic):
@@ -205,194 +200,297 @@ SELECTED TOPIC:
     return prompt
 
 
-def _parse_llm_output(raw):
-    """Safely parse LLM output. Returns a dict with the recognized fields."""
-    if not raw or not isinstance(raw, str):
-        return {"raw": raw or "", "format": "CAROUSEL"}
+# Recognized field headers. Keys are normalized to upper case with runs of
+# spaces/hyphens collapsed, then mapped through _ALIASES.
+_ALIASES = {
+    "SUB HEADLINE": "SUB_HEADLINE",
+    "SUBHEADLINE": "SUB_HEADLINE",
+    "VISUAL": "VISUAL_DIRECTION",
+    "VISUAL DIRECTION": "VISUAL_DIRECTION",
+    "PUNCHLINE": "PUNNACLE",
+    "POLL QUESTION": "POLL_QUESTION",
+    "SECTIONS DATA POINTS": "SECTIONS_DATA_POINTS",
+    "VISUAL STRUCTURE": "VISUAL_STRUCTURE",
+    "POST TEXT": "POST_TEXT",
+    "HOOK OPENING": "HOOK_OPENING",
+    "VISUAL CONCEPT": "VISUAL_CONCEPT",
+    "FRAME SEQUENCE": "FRAME_SEQUENCE",
+    "ON SCREEN TEXT": "ON_SCREEN_TEXT",
+    "VISUAL ACTION DIRECTION": "VISUAL_ACTION_DIRECTION",
+}
 
-    raw = raw.strip()
-    if not raw:
-        return {"raw": raw, "format": "CAROUSEL"}
+_KEYS = {
+    "HEADLINE",
+    "SUB_HEADLINE",
+    "BODY",
+    "VISUAL_DIRECTION",
+    "CTA",
+    "CAPTION",
+    "HASHTAGS",
+    "HOOK",
+    "SCRIPT",
+    "SCENES",
+    "VISUAL_ACTION_DIRECTION",
+    "ON_SCREEN_TEXT",
+    "TITLE",
+    "SECTIONS_DATA_POINTS",
+    "VISUAL_STRUCTURE",
+    "POST_TEXT",
+    "HOOK_OPENING",
+    "SETUP",
+    "PUNNACLE",
+    "VISUAL_CONCEPT",
+    "FRAME_SEQUENCE",
+    "TEXT",
+    "POLL_QUESTION",
+}
 
-    result = {
-        "raw": raw,
-        "format": "CAROUSEL",
-        "slides": [],
-        "hook": "",
-        "script": "",
-        "scenes": [],
-        "visual_action_direction": "",
-        "on_screen_text": "",
-        "cta": "",
-        "caption": "",
-        "headline": "",
-        "supporting_text": "",
-        "visual_concept": "",
-        "doi": "",
-        "setup": "",
-        "punchline": "",
-        "caption_text": "",
-        "frame_sequence": [],
-        "poll_question": "",
-        "sections_data_points": "",
-        "visual_structure": "",
-        "post_text": "",
-        "hook_opening": "",
-        "hashtags": "",
-    }
+_SLIDE_MARKER = re.compile(r"SLIDE\s+\d+")
+_HEADER = re.compile(r"^\s*([A-Za-z][A-Za-z0-9_ -]{1,40}?)\s*(?::\s*(.*))?$")
 
-    fmt = "CAROUSEL"
-    # Check for format-specific markers (more specific patterns first)
-    if "FRAME_SEQUENCE" in raw.upper() or "POLL_QUESTION" in raw.upper():
-        fmt = "STORY_POLL"
-    elif "HOOK_OPENING" in raw.upper() or "POST_TEXT" in raw.upper():
-        fmt = "TEXT_POST"
-    elif "SECTIONS_DATA_POINTS" in raw.upper() or "VISUAL_STRUCTURE" in raw.upper():
-        fmt = "INFOGRAPHIC"
-    elif "SETUP" in raw.upper() or "PUNNACLE" in raw.upper():
-        fmt = "MEME"
-    elif "HEADLINE" in raw.upper() and "SUPPORTING" in raw.upper():
-        fmt = "SINGLE_IMAGE"
-    elif "HOOK" in raw.upper() or "SCRIPT" in raw.upper():
-        fmt = "REEL"
-    elif "SLIDE" in raw.upper() or "HEADLINE" in raw.upper():
+
+def _parse_header(line):
+    """Return (KEY, inline value) when the line starts a known field."""
+    match = _HEADER.match(line.strip())
+    if not match:
+        return None
+
+    key = re.sub(r"[-\s]+", " ", match.group(1).strip()).upper()
+    key = _ALIASES.get(key, key)
+
+    if key in _KEYS or _SLIDE_MARKER.fullmatch(key):
+        return key, (match.group(2) or "").strip()
+    return None
+
+
+def _sections(raw):
+    """Split Vera's plain-text output into ordered (key, value) sections.
+
+    A section keeps every following line until the next recognized header, so
+    multi-line bodies and captions survive intact.
+    """
+    sections = []
+    current = None
+
+    for line in raw.splitlines():
+        parsed = _parse_header(line)
+        if parsed:
+            key, value = parsed
+            current = {"key": key, "value": value, "lines": []}
+            sections.append(current)
+        elif current is not None:
+            stripped = line.strip()
+            if stripped:
+                current["lines"].append(stripped)
+
+    for section in sections:
+        if section["lines"]:
+            parts = ([section["value"]] if section["value"] else []) + section["lines"]
+            section["value"] = "\n".join(parts).strip()
+
+    return sections
+
+
+def _flat_fields(raw):
+    fields = {}
+    for section in _sections(raw):
+        fields.setdefault(section["key"], section["value"])
+    return fields
+
+
+def _split_numbered(text, marker):
+    """Split "Scene 1: ... Scene 2: ..." / "Frame 1: ..." blocks into items."""
+    if not text:
+        return []
+
+    pattern = re.compile(r"(?i)\b" + marker + r"\s*\d+\s*[:.)-]\s*")
+    matches = list(pattern.finditer(text))
+    pieces = []
+
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        piece = text[match.end():end].strip()
+        if piece:
+            pieces.append(piece)
+
+    if pieces:
+        return pieces
+
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _parse_carousel(raw):
+    slides = []
+    caption = ""
+    hashtags = ""
+    current = None
+
+    for section in _sections(raw):
+        key = section["key"]
+
+        if _SLIDE_MARKER.fullmatch(key):
+            current = {
+                "headline": section["value"],
+                "subheadline": "",
+                "body": "",
+                "cta": "",
+                "visual_direction": "",
+            }
+            slides.append(current)
+            continue
+
+        if key == "CAPTION":
+            caption = section["value"]
+            current = None
+            continue
+
+        if key == "HASHTAGS":
+            hashtags = section["value"]
+            current = None
+            continue
+
+        if current is None:
+            continue
+
+        if key == "HEADLINE":
+            current["headline"] = section["value"]
+        elif key == "SUB_HEADLINE":
+            current["subheadline"] = section["value"]
+        elif key == "BODY":
+            current["body"] = section["value"]
+        elif key == "CTA":
+            current["cta"] = section["value"]
+        elif key == "VISUAL_DIRECTION":
+            current["visual_direction"] = section["value"]
+
+    return slides, caption, hashtags
+
+
+def _build_copy(raw, fmt):
+    """Extract canonical fields from plain text for one format."""
+    if fmt == "CAROUSEL":
+        slides, caption, hashtags = _parse_carousel(raw)
+        return {
+            "format": fmt,
+            "raw": raw,
+            "slides": slides,
+            "caption": caption,
+            "hashtags": hashtags,
+        }
+
+    fields = _flat_fields(raw)
+
+    if fmt == "SINGLE_IMAGE":
+        return {
+            "format": fmt,
+            "raw": raw,
+            "headline": fields.get("HEADLINE", ""),
+            "supporting_text": fields.get("SUPPORTING_TEXT", ""),
+            "visual_concept": fields.get("VISUAL_CONCEPT", ""),
+            "cta": fields.get("CTA", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    if fmt == "REEL":
+        scenes = [
+            {"visual_direction": text, "on_screen_text": "", "duration": ""}
+            for text in _split_numbered(fields.get("SCENES", ""), "Scene")
+        ]
+        return {
+            "format": fmt,
+            "raw": raw,
+            "hook": fields.get("HOOK", ""),
+            "script": fields.get("SCRIPT", ""),
+            "scenes": scenes,
+            "visual_action_direction": fields.get("VISUAL_ACTION_DIRECTION", ""),
+            "on_screen_text": fields.get("ON_SCREEN_TEXT", ""),
+            "cta": fields.get("CTA", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    if fmt == "INFOGRAPHIC":
+        return {
+            "format": fmt,
+            "raw": raw,
+            "title": fields.get("TITLE", "") or fields.get("HEADLINE", ""),
+            "sections_data_points": fields.get("SECTIONS_DATA_POINTS", ""),
+            "visual_structure": fields.get("VISUAL_STRUCTURE", ""),
+            "cta": fields.get("CTA", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    if fmt == "TEXT_POST":
+        return {
+            "format": fmt,
+            "raw": raw,
+            "post_text": fields.get("POST_TEXT", ""),
+            "hook_opening": fields.get("HOOK_OPENING", ""),
+            "cta": fields.get("CTA", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    if fmt == "MEME":
+        return {
+            "format": fmt,
+            "raw": raw,
+            "setup": fields.get("SETUP", ""),
+            "punchline": fields.get("PUNNACLE", "") or fields.get("PUNCHLINE", ""),
+            "visual_concept": fields.get("VISUAL_CONCEPT", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    if fmt == "STORY_POLL":
+        return {
+            "format": fmt,
+            "raw": raw,
+            "frame_sequence": _split_numbered(
+                fields.get("FRAME_SEQUENCE", ""), "Frame"
+            ),
+            "text": fields.get("TEXT", ""),
+            "poll": fields.get("POLL_QUESTION", ""),
+            "cta": fields.get("CTA", ""),
+            "caption": fields.get("CAPTION", ""),
+            "hashtags": fields.get("HASHTAGS", ""),
+        }
+
+    return {"format": "CAROUSEL", "raw": raw, "slides": []}
+
+
+def _detect_format(raw):
+    upper = raw.upper()
+    if "FRAME_SEQUENCE" in upper or "POLL_QUESTION" in upper:
+        return "STORY_POLL"
+    if "HOOK_OPENING" in upper or "POST_TEXT" in upper:
+        return "TEXT_POST"
+    if "SECTIONS_DATA_POINTS" in upper or "VISUAL_STRUCTURE" in upper:
+        return "INFOGRAPHIC"
+    if "PUNNACLE" in upper or "SETUP" in upper:
+        return "MEME"
+    if "SUPPORTING_TEXT" in upper:
+        return "SINGLE_IMAGE"
+    if "SCENES" in upper or "HOOK" in upper or "SCRIPT" in upper:
+        return "REEL"
+    return "CAROUSEL"
+
+
+def _parse_llm_output(raw, fmt=None, topic=None):
+    """Parse Vera's plain-text output into canonical copy for one format."""
+    if not raw or not isinstance(raw, str) or not raw.strip():
+        return models.fallback_copy(fmt or "CAROUSEL", topic or "")
+
+    fmt = (fmt or _detect_format(raw)).upper()
+    if fmt not in SUPPORTED_FORMATS:
         fmt = "CAROUSEL"
 
-    result["format"] = fmt
-
-    if fmt == "CAROUSEL":
-        _extract_carousel(raw, result)
-    elif fmt == "REEL":
-        _extract_reel(raw, result)
-    elif fmt == "SINGLE_IMAGE":
-        _extract_single_image(raw, result)
-    elif fmt == "INFOGRAPHIC":
-        _extract_infographic(raw, result)
-    elif fmt == "TEXT_POST":
-        _extract_text_post(raw, result)
-    elif fmt == "MEME":
-        _extract_meme(raw, result)
-    elif fmt == "STORY_POLL":
-        _extract_story_poll(raw, result)
-
-    return result
-
-
-def _extract_carousel(raw, result):
-    import re
-    slide_pattern = r"SLIDE\s*(\d+)[^\n]*\n(.*?)(?=SLIDE\s*\d+|\nCAPTION\n|$)"
-    matches = re.findall(slide_pattern, raw, re.DOTALL | re.IGNORECASE)
-    for i, (num, slide_text) in enumerate(matches, 1):
-        slide_text = slide_text.strip()
-        result["slides"].append(slide_text)
-        headline = re.search(r"HEADLINE:\s*(.+?)(?=\n|$)", slide_text, re.IGNORECASE | re.DOTALL)
-        if headline:
-            result[f"slide_{i}_headline"] = headline.group(1).strip()
-        body = re.search(r"BODY:\s*(.+?)(?=\n|$)", slide_text, re.IGNORECASE | re.DOTALL)
-        if body:
-            result[f"slide_{i}_body"] = body.group(1).strip()
-        direction = re.search(r"VISUAL DIRECTION:\s*(.+?)(?=\n|$)", slide_text, re.IGNORECASE | re.DOTALL)
-        if direction:
-            result[f"slide_{i}_direction"] = direction.group(1).strip()
-
-    if not result["slides"]:
-        result["slides"] = [raw]
-
-
-def _extract_reel(raw, result):
-    import re
-    if hook := re.search(r"HOOK:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hook"] = hook.group(1).strip()
-    if script := re.search(r"SCRIPT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["script"] = script.group(1).strip()
-    if scenes := re.findall(r"SCENES?\s*\n(.+?)(?=\n|$)", raw, re.IGNORECASE):
-        result["scenes"] = [s.strip() for s in scenes]
-    if direction := re.search(r"VISUAL_ACTION_DIRECTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["visual_action_direction"] = direction.group(1).strip()
-    if text := re.search(r"ON_SCREEN_TEXT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["on_screen_text"] = text.group(1).strip()
-    if cta := re.search(r"CTA:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["cta"] = cta.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
-
-
-def _extract_single_image(raw, result):
-    import re
-    if headline := re.search(r"HEADLINE:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["headline"] = headline.group(1).strip()
-    if supporting := re.search(r"SUPPORTING_TEXT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["supporting_text"] = supporting.group(1).strip()
-    if concept := re.search(r"VISUAL_CONCEPT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["visual_concept"] = concept.group(1).strip()
-    if cta := re.search(r"CTA:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["cta"] = cta.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
-
-
-def _extract_infographic(raw, result):
-    import re
-    if title := re.search(r"TITLE:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["headline"] = title.group(1).strip()
-    if sections := re.search(r"SECTIONS_DATA_POINTS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["sections_data_points"] = sections.group(1).strip()
-    if structure := re.search(r"VISUAL_STRUCTURE:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["visual_structure"] = structure.group(1).strip()
-    if cta := re.search(r"CTA:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["cta"] = cta.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
-
-
-def _extract_text_post(raw, result):
-    import re
-    if post := re.search(r"POST_TEXT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["post_text"] = post.group(1).strip()
-    if hook := re.search(r"HOOK_OPENING:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hook_opening"] = hook.group(1).strip()
-    if cta := re.search(r"CTA:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["cta"] = cta.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption_text"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
-
-
-def _extract_meme(raw, result):
-    import re
-    if setup := re.search(r"SETUP:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["setup"] = setup.group(1).strip()
-    if punchline := re.search(r"PUNNACLE:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["punchline"] = punchline.group(1).strip()
-    if concept := re.search(r"VISUAL_CONCEPT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["visual_concept"] = concept.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption_text"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
-
-
-def _extract_story_poll(raw, result):
-    import re
-    if frames := re.findall(r"FRAME_SEQUENCE:\s*\n(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["frame_sequence"] = [f.strip() for f in frames]
-    if text := re.search(r"TEXT:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["text"] = text.group(1).strip()
-    if poll := re.search(r"POLL_QUESTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["polls"] = poll.group(1).strip()
-    if cta := re.search(r"CTA:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["cta"] = cta.group(1).strip()
-    if caption := re.search(r"CAPTION:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["caption"] = caption.group(1).strip()
-    if hashtags := re.search(r"HASHTAGS:\s*(.+?)(?=\n|$)", raw, re.IGNORECASE | re.DOTALL):
-        result["hashtags"] = hashtags.group(1).strip()
+    try:
+        return models.normalize_copy(_build_copy(raw.strip(), fmt), fmt)
+    except (ValueError, TypeError) as exc:
+        return models.fallback_copy(fmt, topic or raw.strip()[:80], exc)
 
 
 def run(topic, fmt="CAROUSEL"):
@@ -402,7 +500,7 @@ def run(topic, fmt="CAROUSEL"):
         topic: The content topic/idea.
         fmt: The selected format.
     Returns:
-        A dict with format-specific structured output.
+        A canonical copy dict (see core/models.py) for the selected format.
     """
     fmt = (fmt or "CAROUSEL").upper()
     if fmt not in SUPPORTED_FORMATS:
@@ -412,14 +510,7 @@ def run(topic, fmt="CAROUSEL"):
 
     try:
         raw = generate(prompt)
-        return _parse_llm_output(raw)
-    except Exception as e:
-        return {
-            "raw": topic,
-            "format": fmt,
-            "slides": [topic],
-            "caption": "Generated content (mock mode). Error: " + str(e),
-            "hashtags": "#content #socialmedia",
-        }
+    except Exception as exc:
+        return models.fallback_copy(fmt, topic, exc)
 
-
+    return _parse_llm_output(raw, fmt, topic)

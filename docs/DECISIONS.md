@@ -94,3 +94,59 @@ with no way forward. The fallback keeps any fresh topic usable in mock mode.
 
 **Consequence:** Mock ideas are generic for unmatched topics. Real LLM mode is
 unaffected.
+
+## D-010 — One canonical copy schema per format
+
+**Decision:** `core/models.py` owns the only copy shape for each of the seven
+formats. Vera validates and normalizes its parser output through
+`normalize_copy()` and returns `fallback_copy()` when parsing fails. Kite calls
+`normalize_copy()` again at its boundary.
+
+**Why:** Vera and Kite had drifted apart (`visual_direction` vs. other names,
+REEL scenes as strings vs. dicts), which crashed the renderer and produced empty
+previews. A shared schema makes field drift a test failure instead of a runtime
+error.
+
+**Consequence:** Adding or renaming a field requires changing `core/models.py`
+first. Unknown fields are dropped at the boundary, so the LLM cannot smuggle
+arbitrary keys into `state.json`.
+
+## D-011 — Mock Vera routes on the format name, not keywords
+
+**Decision:** `core/llm.py` reads the selected format from the exact
+`OUTPUT FORMAT - <FORMAT>` line in Vera's prompt and returns the matching mock
+block.
+
+**Why:** Keyword matching on "caption" made every format return carousel copy,
+so the browser flow could not exercise the other six renderers.
+
+**Consequence:** The mock depends on that prompt line staying stable. A change to
+`_build_format_prompt()` must keep the line or update the mock parser.
+
+## D-012 — Render assets are project-relative and served through `/api/asset`
+
+**Decision:** Kite stores paths such as `data/renders/item_9/slide_1.png`
+(forward slashes, relative to the project root). `/api/asset` serves only
+`data/renders/` and `static/assets/` and rejects absolute, drive-letter, or
+`..` paths. The UI also rewrites legacy absolute Windows paths before requesting
+them.
+
+**Why:** Absolute Windows paths never resolved in the browser, so every preview
+404'd, and a static-folder-only allowlist could not reach generated renders.
+
+**Consequence:** Moving render output out of `data/renders/` requires updating
+the allowlist. Old state entries with absolute paths keep working through the
+UI rewrite.
+
+## D-013 — `core/state.py` retries the atomic replace on Windows
+
+**Decision:** Serialize `save()` with a process lock and retry `os.replace` up to
+20 times (50 ms apart) when Windows reports `PermissionError`.
+
+**Why:** `POST /api/idea` returned 500 with
+`PermissionError: [WinError 5]` while another request was reading `state.json`.
+Windows denies the replace while the destination has an open handle.
+
+**Consequence:** Writes can take up to one extra second under contention but no
+longer fail. Multi-process deployments still need a single writer; that belongs
+to the storage phase.
