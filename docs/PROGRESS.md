@@ -569,7 +569,7 @@ uses a temporary data directory.
 
 ## Phase 7 — Documentation and acceptance (2026-10-29)
 
-**Status:** documentation complete; fresh-clone acceptance recorded below.
+**Status:** complete.
 
 ### Findings before the change
 
@@ -615,13 +615,34 @@ uses a temporary data directory.
 - Cross-checked every documented field, route, status code, canvas size, and
   environment variable against the current source before writing it.
 
+### Fresh-clone acceptance
+
+Cloned commit `7eac40d` to
+`C:\Users\Admin\AppData\Local\Temp\opencode\cs_clone_20261029`, created a new
+venv, installed `requirements.txt` and Chromium, and started `python run.py` on
+port 8091. The clone contained only `data/.gitkeep`.
+
+- Startup: `Mode = mock`, `Publisher = mock`, `Debug = False`, correct
+  template/static paths; `GET /` returned 200 (45,196 bytes).
+- UI only: created `Fresh clone acceptance`, generated ideas, selected one,
+  approved copy and design, and published. Item 1 ended at `stage=done`,
+  `status=published_local`, `published=true`, `publish.mode=mock`, with three
+  1080×1350 previews and `data/published/item_1.json`.
+- Console errors, page errors, and `/api/` responses ≥ 400: none.
+- `pytest -q`: `83 passed, 1 deselected in 256.15s`.
+- `pytest -m e2e`: `1 passed, 83 deselected in 19.08s`.
+- The original repository's state still held its 16 items and no
+  `Fresh clone` topic. The acceptance server was stopped.
+
+**Result: pass.** Details are in `docs/AUDIT_RESULT.md`.
+
 ### Data changes
 
-None. Documentation only.
+None in the original repository. Documentation only; the acceptance wrote only
+to the temporary clone and its pytest temp directories.
 
 ### Blockers
 - None.
 
 ### Next steps
-- Fresh clone: follow `docs/SETUP.md`, start the app, publish one item, and run
-  both test commands. Record the result in `docs/AUDIT_RESULT.md` and here.
+- None. The audit plan (phases 0–7) is complete.

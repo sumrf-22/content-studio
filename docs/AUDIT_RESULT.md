@@ -146,7 +146,7 @@ documents, plus a fresh-clone acceptance run.
 | `51beb6a` | Phase 4: secure defaults, token auth, CSRF, headers |
 | `7ba12ce` | Phase 5: renderer/API tests, Playwright e2e, data-dir isolation |
 | `e19a4d0` | Phase 6: mock-only publisher, refuse real Meta Graph publishing |
-| `TBD` | Phase 7: documentation and fresh-clone acceptance |
+| `7eac40d` | Phase 7: documentation; the fresh-clone acceptance is recorded in the follow-up docs commit |
 
 ## Residual risks and open items
 
@@ -188,13 +188,57 @@ blocks the supported local workflow.
 
 ## Fresh-clone acceptance
 
-To be completed by the acceptance run:
+Run on 2026-10-29 from commit `7eac40d` (the Phase 7 documentation commit).
 
-1. Clone the repository to a temporary directory.
-2. Follow `docs/SETUP.md`: create a venv, install `requirements.txt`, install
-   Chromium.
-3. Run `python run.py`; open the dashboard; create and publish one item.
-4. Run `pytest -q` and `pytest -m e2e`.
-5. Record the clone path, commands, and results here.
+Clone and setup:
 
-Result: **pending — filled in by the Phase 7 acceptance commit.**
+```powershell
+git clone D:\content_studio\content_studio C:\Users\Admin\AppData\Local\Temp\opencode\cs_clone_20261029
+cd C:\Users\Admin\AppData\Local\Temp\opencode\cs_clone_20261029
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+```
+
+The clone contained only `data/.gitkeep`; no state, renders, backups, artifacts,
+or `.env` were copied.
+
+Install result: `flask 3.1.3`, `requests 2.34.2`, `Pillow 12.3.0`, `pytest 9.2.0`,
+`playwright 1.64.1`, installed cleanly (with their transitive dependencies).
+
+Run and manual UI:
+
+```powershell
+$env:CONTENT_STUDIO_PORT = "8091"
+.\.venv\Scripts\python.exe run.py
+```
+
+Startup printed `Mode = mock`, `Publisher = mock`, `Debug = False`, and the
+correct template/static directories. `GET /` returned `200` (45,196 bytes).
+
+A Playwright session then used only the UI to create `Fresh clone acceptance`,
+generate ideas, select one, approve copy, approve design, and publish:
+
+- item 1: `stage=done`, `status=published_local`, `published=true`,
+  `publish.mode=mock`, `format=CAROUSEL`
+- three previews at 1080×1350
+- `data/published/item_1.json` written
+- console errors: none; page errors: none; `/api/` responses ≥ 400: none
+- the only dialog was the expected "Idea generated" confirmation
+
+Automated suites in the same clone:
+
+| Command | Result |
+|---|---|
+| `pytest -q` | `83 passed, 1 deselected in 256.15s` |
+| `pytest -m e2e` | `1 passed, 83 deselected in 19.08s` |
+
+The e2e run wrote `e2e_carousel_design.png`, `e2e_story_poll_design.png`,
+`e2e_dashboard.png`, and `e2e_server.log` to the clone's
+`tests/artifacts/`. Afterwards the clone state held only the manually published
+item, and the original repository's `data/state.json` still held its 16 items
+with no `Fresh clone` topic.
+
+The acceptance server was stopped; port 8091 was released.
+
+**Result: pass.**
