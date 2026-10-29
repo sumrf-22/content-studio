@@ -337,3 +337,85 @@ Item 16 created and published. Orphan renders moved to the Phase 3 backup.
 ### Next steps
 - Phase 4: security posture — `debug=False` default, bind `127.0.0.1`, token for
   non-localhost, CSRF, path-traversal tests, `docs/SECURITY.md`.
+
+## Phase 4 — Security (2026-10-29)
+
+**Status:** complete.
+
+### Findings before the change (commit `725613d`)
+
+1. **Debug mode always on.** `run.py` ended with
+   `app.run(host="127.0.0.1", port=8080, debug=True)`. Startup logs from the
+   Phase 2 session show the consequence: `Debugger is active! Debugger PIN:
+   954-738-013`. Anyone who can reach the port can execute code through the
+   Werkzeug console.
+2. **No authentication surface at all.** `grep -n "token\|auth\|login"
+   dashboard/app.py` matched nothing, and the host/port were hardcoded, so there
+   was no supported way to expose the app and no way to protect it if someone
+   changed the bind address by hand.
+3. **CSRF checks were incidental, not explicit.** Mutations happened to require
+   JSON (`request.get_json(silent=True)`), which a cross-site form cannot send,
+   but nothing verified `Origin` or `Sec-Fetch-Site` and nothing rejected
+   non-JSON bodies on purpose.
+4. **Traversal behaviour was untested.** The Phase 2 allowlist existed but had no
+   regression tests; a future edit could have reopened `static/assets` traversal.
+
+### Changes
+
+- `config.py`: `ACCESS_TOKEN` read from `CONTENT_STUDIO_TOKEN`.
+- `run.py`: host/port/debug come from `CONTENT_STUDIO_HOST/PORT/DEBUG`
+  (debug off by default, no reloader unless enabled). A non-loopback bind without
+  a token exits with code 2 before the server starts, and a non-loopback bind
+  prints a plain-HTTP warning. Startup prints the resolved dirs, mode, and debug
+  flag.
+- `dashboard/app.py`:
+  - `guard_request()` — constant-time token check against the
+    `X-Content-Studio-Token` header, the `cs_token` cookie, or a one-time
+    `?token=` query that sets an `HttpOnly`, `SameSite=Strict`, `Secure`-when-HTTPS
+    cookie and redirects to `/`.
+  - CSRF guard — mutating requests with a body must be `application/json`, and
+    `Origin` / `Sec-Fetch-Site` must match the request host when present.
+  - `security_headers()` — `nosniff`, `DENY` framing, `no-referrer`, and a
+    same-origin CSP.
+- `tests/test_security.py`: 16 tests for token auth, cookie flow, form and
+  cross-origin rejection, headers, and six traversal payloads.
+- `docs/SECURITY.md`: deployment matrix, each control, limitations, verification.
+
+### Verification
+
+Live probes against `127.0.0.1:8080`:
+
+| Probe | Result |
+|---|---|
+| `/api/asset/../state.json` | 404 (normalized, not served) |
+| `/api/asset/data/renders/../../state.json` | 404 |
+| `/api/asset/static/assets/../../secret.txt` | 404 |
+| `/api/asset/C:/Windows/win.ini` | 400 |
+| `/api/asset/%2e%2e/state.json` | 400 |
+| `/api/asset/..%2Fstate.json` | 400 |
+| Form-encoded `POST /api/idea` | 415 |
+| JSON `POST /api/idea` with `Origin: https://evil.example` | 403 |
+
+Token mode, separate instance on port 8099 with
+`CONTENT_STUDIO_TOKEN=local-test-token`:
+
+- `GET /api/state` without a token → 401.
+- `GET /api/state` with `X-Content-Studio-Token` → 200.
+- `GET /?token=…` followed by cookie auth → 200.
+- `CONTENT_STUDIO_HOST=0.0.0.0` without a token → refuses to start, exit 2.
+
+Server restarted with the new entrypoint: `Debug = False`, `Debug mode: off`,
+page 200 with the CSP header, dashboard renders 8 content cards and six design
+previews with zero console errors.
+
+- `pytest -q`: `48 passed in 56.26s` (16 of them security tests).
+
+### Data changes
+
+None. The origin-test request was rejected before it reached `create_item()`.
+
+### Blockers
+- None.
+
+### Next steps
+- Phase 5: renderer/API/e2e Playwright tests, artifacts in `tests/artifacts/`.

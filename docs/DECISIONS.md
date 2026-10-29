@@ -178,3 +178,31 @@ pipeline state is operator data that should not enter source history.
 **Consequence:** A fresh clone starts with an empty pipeline; `core/state.py`
 recreates the folder on first run. Anyone who wants seed content must copy a
 state file in explicitly.
+
+## D-016 — Localhost by default, one shared token for anything else
+
+**Decision:** Default bind is `127.0.0.1`, debug is off, and any non-loopback
+bind requires `CONTENT_STUDIO_TOKEN`. Authentication is a single shared secret
+presented as a header, a cookie, or a one-time `?token=` URL.
+
+**Why:** The app runs an LLM pipeline that writes files and, in debug mode,
+exposes an interactive console. A single-operator tool does not need accounts,
+but it does need a hard stop before a network bind and a way to authorize remote
+access.
+
+**Consequence:** There is no user model and no per-item authorization. Rotating
+the token and restarting revokes all clients. A multi-user deployment needs a
+real auth layer and a WSGI server, both explicitly out of scope.
+
+## D-017 — CSRF is blocked by requiring same-origin JSON
+
+**Decision:** Mutating requests must send `application/json`, and `Origin` /
+`Sec-Fetch-Site` must match the app when present. No CSRF token is issued.
+
+**Why:** The frontend already sends JSON, so the rule costs nothing. A cross-site
+HTML form cannot set that content type, and browsers mark cross-site `fetch`
+calls with `Origin` and `Sec-Fetch-Site`, so both classic CSRF and scripted
+cross-site posts are rejected at the guard.
+
+**Consequence:** Any future form-based UI or non-browser client must send JSON and
+an honest `Origin`. API tests that post form data will get `415` by design.

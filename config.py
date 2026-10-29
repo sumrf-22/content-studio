@@ -38,3 +38,8 @@ BRAND_NAME = os.getenv("BRAND_NAME", "My Brand")
 MOCK_MODE = not bool(OPENROUTER_API_KEY)
 IMGBB_API_KEY = os.getenv("IMGBB_API_KEY", "")
 
+# Optional shared secret for non-localhost use. Empty means "local only", which
+# is the supported default; run.py refuses to bind a non-loopback address
+# without it.
+ACCESS_TOKEN = os.getenv("CONTENT_STUDIO_TOKEN", "").strip()
+

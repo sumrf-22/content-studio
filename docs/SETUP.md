@@ -61,6 +61,28 @@ Open <http://127.0.0.1:8080>.
 Without an OpenRouter key the app runs in mock mode. At baseline there was no
 `.env` file and `OPENROUTER_API_KEY` was unset, so `MOCK_MODE` was true.
 
+### Runtime settings
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CONTENT_STUDIO_HOST` | `127.0.0.1` | Non-loopback values require a token. |
+| `CONTENT_STUDIO_PORT` | `8080` | |
+| `CONTENT_STUDIO_DEBUG` | off | Enables the reloader and the Werkzeug debugger. |
+| `CONTENT_STUDIO_TOKEN` | unset | Shared secret required for non-localhost access. |
+| `OPENROUTER_API_KEY` | unset | Empty means mock mode. |
+| `OPENROUTER_MODEL` | `openrouter/free` | Free routing only. |
+
+Example for a trusted LAN, with debug still off:
+
+```powershell
+$env:CONTENT_STUDIO_HOST = "0.0.0.0"
+$env:CONTENT_STUDIO_TOKEN = "<long-random-secret>"
+.\.venv\Scripts\python.exe run.py
+```
+
+Then open `http://<host>:8080/?token=<long-random-secret>` once to set the
+access cookie. See `docs/SECURITY.md`.
+
 ### Baseline run evidence
 
 - `GET /` returned HTTP 200 (38,706 bytes), title `Content Studio - Dashboard`.
@@ -70,13 +92,17 @@ Without an OpenRouter key the app runs in mock mode. At baseline there was no
   (`D:\content_studio\templates`); this is a known bug scheduled for Phase 2.
 - The server process was stopped after the check; port 8080 was left free.
 
+Current behaviour (Phase 4): debug off by default, correct template/static
+paths, and the same `127.0.0.1:8080` bind.
+
 ## Test
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Baseline result: `2 passed` (`tests/test_smoke.py`).
+Baseline result: `2 passed` (`tests/test_smoke.py`). Current result: `48 passed`
+across smoke, Phase 1, Phase 2, Phase 3, and security tests.
 
 `pytest.ini` sets `pythonpath = .`, so tests can import `dashboard.app` from the
 project root. The `e2e` marker is reserved for the Playwright suite in Phase 5.
@@ -90,4 +116,7 @@ data\_backup_20261029_092442\
 ```
 
 All 49 files were copied and `state.json` matched the original SHA-256. Backups
-live under `data/`, which is gitignored.
+live under `data/` and are gitignored (`data/_backup_*/`).
+
+Phase 3 moved 17 orphan render artifacts into
+`data\_backup_20261029_phase3\` (with `MANIFEST.json`). Nothing was deleted.

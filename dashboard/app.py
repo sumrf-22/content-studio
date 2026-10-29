@@ -1,5 +1,8 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, redirect
+import hmac
 import os
+
+from config import ACCESS_TOKEN, MOCK_MODE
 
 # Absolute paths for templates and static folders
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,6 +14,75 @@ app = Flask(
     template_folder=TEMPLATE_DIR,
     static_folder=STATIC_DIR
 )
+app.config["MOCK_MODE"] = MOCK_MODE
+app.config["ACCESS_TOKEN"] = ACCESS_TOKEN
+
+
+ALLOWED_FETCH_SITES = {"same-origin", "same-site", "none"}
+
+
+@app.before_request
+def guard_request():
+    """Shared-token auth plus same-origin JSON checks for mutating requests."""
+    token = app.config.get("ACCESS_TOKEN") or ""
+    if token:
+        supplied = (
+            request.headers.get("X-Content-Studio-Token")
+            or request.cookies.get("cs_token")
+            or request.args.get("token")
+        )
+        if not supplied or not hmac.compare_digest(str(supplied), token):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "unauthorized"}), 401
+            return (
+                "Unauthorized. Open /?token=<CONTENT_STUDIO_TOKEN> once to set "
+                "the access cookie.",
+                401,
+            )
+        if request.args.get("token") and request.method == "GET":
+            response = redirect("/")
+            response.set_cookie(
+                "cs_token",
+                token,
+                httponly=True,
+                samesite="Strict",
+                secure=request.is_secure,
+            )
+            return response
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        # A cross-site HTML form cannot send application/json, so requiring it
+        # blocks the classic CSRF post. Empty bodies stay allowed so validation
+        # errors surface from the route instead of the guard.
+        if request.content_length and not request.is_json:
+            return jsonify({
+                "error": "content-type must be application/json"
+            }), 415
+
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+            return jsonify({"error": "cross-origin request blocked"}), 403
+
+        fetch_site = request.headers.get("Sec-Fetch-Site")
+        if fetch_site and fetch_site not in ALLOWED_FETCH_SITES:
+            return jsonify({"error": "cross-site request blocked"}), 403
+
+    return None
+
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+    )
+    return response
+
 
 from core.state import load, save, create_item, add_activity, locked
 from core.models import SUPPORTED_FORMATS
