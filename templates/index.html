@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Studio — Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="logo-icon">&#x1F3AC;</div>
+                <span class="logo-text">Content Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <ul>
+                    <li><a href="#" class="active" data-section="dashboard"><span class="nav-icon">&#x25A4;</span> Dashboard</a></li>
+                    <li><a href="#" data-section="content-studio"><span class="nav-icon">&#x25B2;</span> Content Studio</a></li>
+                    <li><a href="#" data-section="ideas"><span class="nav-icon">&#x2726;</span> Ideas</a></li>
+                    <li><a href="#" data-section="pipeline"><span class="nav-icon">&#x25B7;</span> Content Pipeline</a></li>
+                    <li><a href="#" data-section="assets"><span class="nav-icon">&#x2603;</span> Assets</a></li>
+                    <li><a href="#" data-section="projects"><span class="nav-icon">&#x224B;</span> Projects</a></li>
+                    <li><a href="#" data-section="analytics"><span class="nav-icon">&#x25A3;</span> Analytics</a></li>
+                    <li><a href="#" data-section="settings"><span class="nav-icon">&#x2699;</span> Settings</a></li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <span class="pipeline-status">&#x25CF; LIVE</span>
+                <span>v2.1</span>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main">
+            <!-- TOP HEADER -->
+            <header class="main-header">
+                <div class="header-left">
+                    <h1 class="page-title">Content Studio</h1>
+                    <p class="page-subtitle">Manage ideas, copy, and design approval</p>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <span class="search-icon">&#x1F50D;</span>
+                        <input type="text" id="global-search" placeholder="Search content...">
+                    </div>
+                    <button class="icon-btn" id="notifications-btn">
+                        &#x1F506;
+                        <span class="badge" id="notif-badge">0</span>
+                    </button>
+                    <div class="user-area" id="user-menu">
+                        <div class="user-avatar">A</div>
+                        <span class="user-name">Admin</span>
+                        <div class="user-menu-dropdown" style="display:none;">
+                            <a href="#">Profile</a>
+                            <a href="#">Settings</a>
+                            <a href="#">Logout</a>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- MAIN GRID -->
+            <div class="grid" style="flex:1; overflow-y:auto; padding:16px 24px;">
+
+                <!-- CREATE CONTENT (TOP) -->
+                <section class="create-card">
+                    <h2 style="font-size:18px;">&#x2726; Create Content</h2>
+                    <p class="subtitle">What do you want to create?</p>
+                    <div class="create-input">
+                        <input type="text" id="create-topic" placeholder="e.g., Create content about healthy morning habits">
+                        <button class="btn-primary" id="create-btn">
+                            Generate <span class="btn-icon">&#x2192;</span>
+                        </button>
+                    </div>
+                    <p class="hint">Topic goes into Atlas, which selects the best format automatically.</p>
+                </section>
+
+                <!-- OVERVIEW STATS (TOP) -->
+                <section class="grid grid-4" style="margin:8px 0;">
+                    <div class="stat-card">
+                        <div class="stat-icon">&#x2726;</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-ideas">0</span>
+                            <span class="stat-label">Ideas waiting for approval</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">&#x25B7;</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-in-progress">0</span>
+                            <span class="stat-label">Content in progress</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">&#x2713;</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-ready">0</span>
+                            <span class="stat-label">Ready for review</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">&#x2713;&#x2713;</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-published">0</span>
+                            <span class="stat-label">Published / package-ready</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- CONTENT PIPELINE (MIDDLE) -->
+                <section class="card pipeline-card">
+                    <h2>&#x1F4CB; Content Pipeline</h2>
+                    <div class="pipeline" id="pipeline">
+                        <div class="stage">
+                            <span class="stage-name">Idea</span>
+                            <div class="stage-count" id="pipe-idea">0</div>
+                            <span class="stage-status" id="pipe-idea-status">Pending</span>
+                        </div>
+                        <div class="stage-arrow">&rarr;</div>
+                        <div class="stage">
+                            <span class="stage-name">Copy</span>
+                            <div class="stage-count" id="pipe-copy">0</div>
+                            <span class="stage-status" id="pipe-copy-status">Pending</span>
+                        </div>
+                        <div class="stage-arrow">&rarr;</div>
+                        <div class="stage">
+                            <span class="stage-name">Design / Video</span>
+                            <div class="stage-count" id="pipe-design">0</div>
+                            <span class="stage-status" id="pipe-design-status">Pending</span>
+                        </div>
+                        <div class="stage-arrow">&rarr;</div>
+                        <div class="stage">
+                            <span class="stage-name">Final Review</span>
+                            <div class="stage-count" id="pipe-review">0</div>
+                            <span class="stage-status" id="pipe-review-status">Pending</span>
+                        </div>
+                        <div class="stage-arrow">&rarr;</div>
+                        <div class="stage">
+                            <span class="stage-name">Ready</span>
+                            <div class="stage-count" id="pipe-ready">0</div>
+                            <span class="stage-status" id="pipe-ready-status">Pending</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- APPROVAL QUEUE (MIDDLE) -->
+                <section class="card approval-card">
+                    <h2>&#x1F504; Approval Queue</h2>
+                    <div class="approval-list" id="approval-list">
+                        <!-- Dynamic items rendered by JS -->
+                        <div class="empty" id="approval-empty" style="display:none;">No pending approvals.</div>
+                    </div>
+                </section>
+
+                <!-- AI AGENT PIPELINE -->
+                <section class="card">
+                    <h2>🤖 AI Agent Pipeline</h2>
+                    <div class="pipeline" id="agent-pipeline">
+                        <div class="empty">No agent data available.</div>
+                    </div>
+                </section>
+
+                <!-- RECENT CONTENT (NEXT) -->
+                <section class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <h2 style="font-size:18px;">&#x1F4C1; Recent Content</h2>
+                        <span class="panel-toggle" id="recent-toggle">View All <span>&#x25BC;</span></span>
+                    </div>
+                    <div class="recent-grid" id="recent-content">
+                        <!-- Recent content cards injected here by JS -->
+                    </div>
+                    <div class="panel-target" id="more-recent">
+                        <!-- Additional content cards injected here by JS -->
+                    </div>
+                </section>
+
+                <!-- ACTIVITY + VISUAL PREVIEW (SIDE / LOWER SECTION) -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1;overflow-y:auto;padding:0 0 8px 0;">
+                    <!-- ACTIVITY -->
+                    <section class="card activity-card" style="margin:0;">
+                        <h2 style="font-size:16px;padding-bottom:10px;border-bottom:1px solid var(--border);display:inline-block;">&#x1F4C8; Activity</h2>
+                        <div class="activity-list" id="activity-list">
+                            <!-- Activity entries injected here by JS -->
+                        </div>
+                    </section>
+
+                    <!-- VISUAL PREVIEW -->
+                    <section class="card preview-card" style="margin:0;">
+                        <h2 style="font-size:16px;padding-bottom:10px;border-bottom:1px solid var(--border);display:inline-block;">&#x1F3AE; Visual Preview</h2>
+                        <div class="preview-grid" id="preview-grid">
+                            <!-- Preview items injected here by JS -->
+                        </div>
+                    </section>
+                </div>
+
+            </div><!-- /grid -->
+        </main>
+    </div>
+
+    <script>
+        // ---- STATE MANAGEMENT ----
+        let recentCache = [];
+        let maxVisible = 4;
+        let moreVisible = 4;
+
+        // Escape HTML to prevent XSS and template injection
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        // ---- RENDER RECENT CONTENT ----
+        function renderRecentContent(items, containerId) {
+            const container = document.getElementById(containerId);
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="empty">No content yet. Generate something or check the pipeline.</div>';
+                return;
+            }
+
+            const visible = items.slice(0, maxVisible);
+            const remaining = items.length - maxVisible;
+
+            let html = '';
+            for (const item of visible) {
+                html += renderContentCard(item);
+            }
+            container.innerHTML = html;
+
+            if (remaining > 0) {
+                document.getElementById('recent-toggle').style.display = 'block';
+            } else {
+                document.getElementById('recent-toggle').style.display = 'none';
+            }
+        }
+
+        function renderContentCard(item) {
+            const topic = item.topic || item.title || 'Untitled';
+            const format = item.format || (item.structured_idea ? item.structured_idea.format : 'UNKNOWN');
+            const stage = item.stage || 'AWAITING_APPROVAL';
+            const status = item.status || 'pending_approval';
+            const thumb = item.thumbnail || (item.slide_paths ? item.slide_paths[0] : null);
+            const designUrl = item.design || (item.structured_idea ? item.structured_idea.design : null);
+            const designFile = item.design_file || (item.structured_idea ? item.structured_idea.design_file : null);
+
+            let thumbHtml = '';
+            if (thumb) {
+                const safeUrl = thumb.includes('://') ? thumb : '/api/asset/' + thumb;
+                thumbHtml = '<div class="content-thumb"><img src="' + safeUrl + '" alt="Preview"></div>';
+            }
+
+            let formatClass = 'format-carousel';
+            const formatMap = {
+                'CAROUSEL': 'format-carousel',
+                'SINGLE_IMAGE': 'format-single-image',
+                'REEL': 'format-reel',
+                'INFOGRAPHIC': 'format-infographic',
+                'TEXT_POST': 'format-text-post',
+                'MEME': 'format-meme',
+                'STORY_POLL': 'format-story-poll'
+            };
+            const fmt = format.toUpperCase().replace(/_/g, ' ');
+            if (formatMap[fmt]) formatClass = formatMap[fmt];
+
+            let statusClass = 'status-pending_approval';
+            const statusMap = {
+                'published_local': 'status-published_local',
+                'pending_approval': 'status-pending_approval',
+                'rejected': 'status-rejected'
+            };
+            if (statusMap[status]) statusClass = statusMap[status];
+
+            const actions = '<div class="content-actions"><button class="btn-sm" onclick="viewItem(' + item.id + ')">View / Review</button></div>';
+
+            const stageLabel = stage === 'AWAITING_APPROVAL' ? 'Awaiting Approval' :
+                               stage === 'IN_PROGRESS' ? 'In Progress' :
+                               stage === 'READY_FOR_REVIEW' ? 'Ready for Review' :
+                               stage === 'PUBLISHED' ? 'Published' : stage;
+
+            return '<div class="content-card">' +
+                '<div class="content-header">' +
+                    '<span class="format-badge ' + formatClass + '">' + fmt + '</span>' +
+                    '<span class="status-badge ' + statusClass + '">' + stageLabel + '</span>' +
+                '</div>' +
+                thumbHtml +
+                '<div class="content-body">' +
+                    '<div class="content-topic">' + escapeHtml(topic) + '</div>' +
+                    '<div class="content-stage">Stage: ' + stageLabel + '</div>' +
+                '</div>' +
+                actions +
+            '</div>';
+        }
+
+        // ---- RENDER ACTIVITY ----
+        function renderActivity(items) {
+            const container = document.getElementById('activity-list');
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="empty">No recent activity.</div>';
+                return;
+            }
+
+            const visible = items.slice(0, 8);
+            let html = '';
+            for (const act of visible) {
+                const time = act.timestamp ? new Date(act.timestamp).toLocaleString() : 'Just now';
+                html += '<div class="activity-item"><span class="activity-time">' + time + '</span><span class="activity-text">' + escapeHtml(act.text) + '</span></div>';
+            }
+            container.innerHTML = html;
+        }
+
+        // ---- RENDER APPROVAL QUEUE ----
+        // Build the review queue from real pending items.
+        function renderApproval(pendingItems) {
+            const container = document.getElementById('approval-list');
+            const empty = document.getElementById('approval-empty');
+            if (!pendingItems || pendingItems.length === 0) {
+                container.innerHTML = '<div class="empty">No pending approvals.</div>';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            const itemsHtml = [];
+            for (const item of pendingItems) {
+                const id = item.id;
+                const stage = item.stage || 'idea';
+                const topic = item.topic || 'Untitled';
+                const format = item.format || 'CAROUSEL';
+                const status = item.status || 'pending_approval';
+                const selected = item.selected_idea || (item.ideas && item.ideas.length ? item.ideas[0]?.title : null);
+                const ideas = item.ideas || [];
+                const copy = item.copy || (item.structured_idea ? item.structured_idea.copy : null);
+                const design = item.design || (item.structured_idea ? item.structured_idea.design : null);
+
+                const stageLabel = stage === 'idea' ? 'Idea' :
+                                   stage === 'idea_review' ? 'Idea Review' :
+                                   stage === 'copy' ? 'Copy' :
+                                   stage === 'design' ? 'Design' :
+                                   stage === 'publish' ? 'Final Review' :
+                                   stage === 'done' ? 'Ready' : stage;
+
+                // Approval badge for the current stage
+                let badge = '';
+                if (stage === 'idea' || stage === 'idea_review') {
+                    badge = '<span class="approval-badge approval-badge-idea">1 idea</span>';
+                } else if (stage === 'copy') {
+                    badge = '<span class="approval-badge approval-badge-copy">1 copy</span>';
+                } else if (stage === 'design') {
+                    badge = '<span class="approval-badge approval-badge-design">1 design</span>';
+                } else {
+                    badge = '<span class="approval-badge">Ready</span>';
+                }
+
+                // Human action buttons
+                const actions = '<div class="approval-actions">' +
+                    '<button class="btn-sm approve-btn" data-action="approve_' + stage + '" data-item-id="' + id + '">Approve</button>' +
+                    '<button class="btn-sm reject-btn" data-action="reject" data-item-id="' + id + '">Reject</button>' +
+                '</div>';
+
+                // Preview / context for the current stage
+                let preview = '';
+                if (stage === 'idea' || stage === 'idea_review') {
+                    const ideaList = ideas.map((ie, idx) =>
+                        '<div class="preview-stage-row">' +
+                        '<span class="idea-radio"><input type="radio" name="select-idea-' + id + '" value="' + escapeHtml(ie.title) + '"></span>' +
+                        '<span class="idea-title">' + escapeHtml(ie.title) + '</span>' +
+                        '<span class="idea-format">' + (formatMap[escapeHtml(ie.format) || 'CAROUSEL'].replace(/_/g, ' ') || 'CAROUSEL') + '</span>' +
+                        '</div>'
+                    ).join('');
+                    preview = '<div class="preview-stage">' +
+                        (ideas.length ? ideaList : '<div class="empty">No ideas generated.</div>') +
+                        '</div>';
+                } else if (stage === 'copy') {
+                    if (copy && typeof copy === 'object') {
+                        const slides = copy.slides || [];
+                        preview = '<div class="preview-stage">' +
+                            '<div class="preview-stage-row"><span class="idea-format">' + format + '</span></div>' +
+                            (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No copy.</div>') +
+                            '</div>';
+                    } else if (typeof copy === 'string') {
+                        preview = '<div class="preview-stage"><div class="preview-stage-row">' + escapeHtml(copy.slice(0, 80)) + '</div></div>';
+                    } else {
+                        preview = '<div class="preview-stage"><div class="empty">No copy.</div></div>';
+                    }
+                } else if (stage === 'design') {
+                    let slides = [];
+                    let count = 0;
+                    if (design && typeof design === 'object') {
+                        if (design.slides) { slides.push(...design.slides); count = design.slides.length; }
+                        else { slides.push(design); count = 1; }
+                    } else if (typeof design === 'string') {
+                        slides.push(design); count = 1;
+                    }
+                    preview = '<div class="preview-stage">' +
+                        '<div class="preview-stage-row"><span class="idea-format">Design ' + count + '</span></div>' +
+                        (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No design.</div>') +
+                        '</div>';
+                } else if (stage === 'publish') {
+                    preview = '<div class="preview-stage"><div class="empty">Ready for final publish approval.</div></div>';
+                } else if (stage === 'done') {
+                    preview = '<div class="preview-stage"><div class="empty">Published.</div></div>';
+                }
+
+                itemsHtml.push('<div class="approval-item">' +
+                    '<div class="approval-head">' +
+                    badge +
+                    '<span class="approval-topic">' + escapeHtml(topic) + '</span>' +
+                    '</div>' +
+                    '<div class="approval-stage-row">' +
+                    '<span class="approval-stage">' + stageLabel + '</span>' +
+                    '</div>' +
+                    '<div class="approval-preview">' + preview + '</div>' +
+                    actions +
+                    '</div>');
+            }
+            container.innerHTML = itemsHtml.join('');
+        }
+
+        // ---- RENDER VISUAL PREVIEW ----
+        function renderPreview(items) {
+            const container = document.getElementById('preview-grid');
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="empty">No preview available yet.</div>';
+                return;
+            }
+
+            const visible = items.slice(0, 3);
+            let html = '';
+            for (const p of visible) {
+                const topic = p.topic || 'Untitled';
+                const img = p.img || (p.structured_idea ? p.structured_idea.img : null);
+                const carousel = p.carousel || (p.structured_idea ? p.structured_idea.carousel : null);
+
+                let imgHtml = '';
+                if (img && img.includes('://')) {
+                    imgHtml = '<img src="' + img + '" alt="Preview">';
+                } else if (img) {
+                    imgHtml = '<img src="/api/asset/' + encodeURIComponent(img) + '" alt="Preview">';
+                } else if (carousel && carousel.length > 0) {
+                    let slides = '';
+                    for (const s of carousel.slice(0, 4)) {
+                        if (s.includes('://')) {
+                            slides += '<img class="preview-slide" src="' + s + '">';
+                        } else {
+                            slides += '<img class="preview-slide" src="/api/asset/' + encodeURIComponent(s) + '">';
+                        }
+                    }
+                    imgHtml = '<div class="preview-carousel">' + slides + '</div>';
+                } else {
+                    imgHtml = '<div class="empty">No preview available</div>';
+                }
+
+                html += '<div class="preview-item">' +
+                    '<div class="preview-header">' +
+                        '<span class="preview-topic">' + escapeHtml(topic) + '</span>' +
+                        '<span class="format-badge format-carousel">Preview</span>' +
+                    '</div>' +
+                    '<div class="preview-content">' + imgHtml + '</div>' +
+                '</div>';
+            }
+            container.innerHTML = html;
+        }
+
+        // ---- UPDATE COUNTS ----
+        function updateCounts(state) {
+            const items = state.items || [];
+
+            // Overview counts
+            const ideasWaiting = items.filter(x => x.status === 'pending_approval' && (x.stage === 'idea' || x.stage === 'idea_review')).length;
+            const inProgress = items.filter(x => x.status !== 'published_local' && x.status !== 'rejected' && x.stage !== 'done').length;
+            const readyForReview = items.filter(x => x.stage === 'publish' && x.status !== 'rejected').length;
+            const published = items.filter(x => x.status === 'published_local' || x.stage === 'done').length;
+
+            document.getElementById('stat-ideas').textContent = ideasWaiting;
+            document.getElementById('stat-in-progress').textContent = inProgress;
+            document.getElementById('stat-ready').textContent = readyForReview;
+            document.getElementById('stat-published').textContent = published;
+
+            // Pipeline counts (by stage)
+            const byStage = {};
+            items.forEach(x => { byStage[x.stage] = (byStage[x.stage] || 0) + 1; });
+            document.getElementById('pipe-idea').textContent = byStage.idea || 0;
+            document.getElementById('pipe-copy').textContent = byStage.copy || 0;
+            document.getElementById('pipe-design').textContent = byStage.design || 0;
+            document.getElementById('pipe-review').textContent = byStage.publish || 0;
+            document.getElementById('pipe-ready').textContent = byStage.done || 0;
+
+            // Notifications (approval queue)
+            const notif = state.items.filter(x => x.status === 'pending_approval' && x.stage !== 'idea' && x.stage !== 'done').length;
+            document.getElementById('notif-badge').textContent = notif;
+        }
+
+        // ---- LOAD STATE ----
+        async function loadState() {
+            try {
+                const res = await fetch('/api/state');
+                const state = await res.json();
+
+                renderRecentContent(state.items || [], 'recent-content');
+                renderRecentContent(state.items || [], 'more-recent');
+
+                const allItems = state.items || [];
+                const activity = state.activity || [];
+                renderActivity(activity);
+
+                const previewItems = allItems.filter(i => i.design || (i.structured_idea && (i.structured_idea.img || i.structured_idea.carousel)));
+                renderPreview(previewItems);
+
+                updateCounts(state);
+
+                // Render the AI agent pipeline with real derived data
+                renderAgentPipeline(state.items, state.activity);
+
+                // Render approval items dynamically
+                const approvalList = document.getElementById('approval-list');
+                renderApproval(state.items.filter(x => x.status === 'pending_approval'));
+            } catch (err) {
+                console.error('Failed to load state:', err);
+            }
+        }
+
+        // ---- NAVIGATION ----
+        document.querySelectorAll('.sidebar-nav a').forEach(a => {
+            a.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.querySelectorAll('.sidebar-nav a').forEach(x => x.classList.remove('active'));
+                this.classList.add('active');
+                const section = this.dataset.section;
+                if (section === 'dashboard') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    alert('Navigating to: ' + section + ' (not yet implemented)');
+                }
+            });
+        });
+
+        // ---- RECENT CONTENT EXPANSION ----
+        document.getElementById('recent-toggle').addEventListener('click', function() {
+            const target = document.getElementById('more-recent');
+            target.classList.toggle('open');
+            const span = this.querySelector('span');
+            span.textContent = target.classList.contains('open') ? '&#x25B4; Hide' : 'View All &#x25BC;';
+        });
+
+        // ---- GENERATE CONTENT ----
+        document.getElementById('create-btn').addEventListener('click', function() {
+            const topic = document.getElementById('create-topic').value.trim();
+            if (!topic) return;
+
+            fetch('/api/idea', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic: topic })
+            })
+            .then(res => {
+                if (res.ok) {
+                    document.getElementById('create-topic').value = '';
+                    loadState();
+                    alert('Idea generated! It is now awaiting approval.');
+                } else {
+                    alert('Failed to generate idea.');
+                }
+            })
+            .catch(err => console.error('Error:', err));
+        });
+
+        // ---- VIEW ITEM ----
+        window.viewItem = function(id) {
+            fetch('/api/item/' + id)
+                .then(res => {
+                    if (res.ok) {
+                        return res.json();
+                    }
+                    return Promise.reject(new Error('Item not found'));
+                })
+                .then(item => {
+                    const stage = item.stage || 'Unknown';
+                    const status = item.status || 'Unknown';
+                    alert('Item ' + id + ':\n\nTopic: ' + (item.topic || 'Unknown') + '\nStage: ' + stage + '\nStatus: ' + status);
+                })
+                .catch(err => {
+                    alert('Error: ' + err.message);
+                    console.error('Error:', err);
+                });
+        };
+
+        // ---- APPROVE BUTTONS ----
+        document.querySelectorAll('.approve-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const action = this.dataset.action;
+                const itemId = this.dataset.itemId;
+                const btn = this;
+                btn.disabled = true;
+                btn.textContent = 'Processing...';
+                fetch('/api/action/' + itemId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action })
+                })
+                .then(res => {
+                    if (res.ok) {
+                        loadState();
+                        alert('Approved: ' + action);
+                    } else {
+                        alert('Failed to approve: ' + action);
+                    }
+                })
+                .catch(err => console.error('Error:', err))
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = 'Review';
+                });
+            });
+        });
+
+        // ---- NOTIFICATION BUTTON ----
+        const notifBadge = document.getElementById('notif-badge');
+        notifBadge.textContent = '0';
+
+        document.getElementById('notifications-btn').addEventListener('click', function() {
+            const items = state.items || [];
+            const pending = items.filter(x => x.status === 'pending_approval' && x.stage !== 'idea' && x.stage !== 'done').length;
+            const count = pending > 0 ? pending : 0;
+            notifBadge.textContent = count > 0 ? count : '0';
+            alert('Notifications: ' + count + ' pending approval(s)');
+        });
+
+        // ---- USER AREA ----
+        const userArea = document.getElementById('user-menu');
+        const dropdown = userArea.querySelector('.user-menu-dropdown');
+
+        userArea.addEventListener('click', function(e) {
+            const isDropdown = e.target.closest('a');
+            if (isDropdown) {
+                e.preventDefault();
+                const action = e.target.textContent.trim();
+                alert('Action: ' + action);
+                dropdown.style.display = 'none';
+            } else {
+                dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!userArea.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // ---- AI AGENT PIPELINE (ATLAS -> VERA -> KITE -> ORIN) ----
+        // Real data derived from state.items + state.activity only.
+        // No fake agents object; status is "Idle / No active item" when unknown.
+        function renderAgentPipeline(items, activity) {
+            const container = document.getElementById('agent-pipeline');
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="empty">No content yet.</div>';
+                return;
+            }
+
+            // --- Derive per-agent data from real state ---
+            const itemsArray = items || [];
+
+            // ATLAS: last Atlas activity + ideas waiting for approval
+            const atlasActivity = activity || [];
+            const lastAtlas = atlasActivity.find(a => a.message && a.message.includes('Atlas generated')) || 
+                              atlasActivity.find(a => a.message && a.message.includes('Atlas created'));
+            const ideasWaiting = itemsArray.filter(i => i.status === 'pending_approval' && (i.stage === 'idea' || i.stage === 'idea_review')).length;
+            const lastAtlasItem = itemsArray.find(i => i.stage === 'idea_review' || i.stage === 'idea') || null;
+
+            // VERA: items where copy was generated + copy approvals waiting
+            const veraGenerated = itemsArray.filter(i => i.copy && i.format === 'CAROUSEL').length;
+            const copyWaiting = itemsArray.filter(i => i.status === 'pending_approval' && i.stage === 'copy').length;
+            const veraLastAction = activity.find(a => a.message && a.message.includes('Vera generated')) || null;
+            const veraLastItem = itemsArray.find(i => i.copy && (i.stage === 'copy' || i.stage === 'design')) || null;
+
+            // KITE: items with design/render activity + design approvals waiting
+            const kiteActivity = activity.filter(a => a.message && a.message.toLowerCase().includes('kite'));
+            const kiteLastAction = kiteActivity.slice(-1)[0] || null;
+            const designWaiting = itemsArray.filter(i => i.status === 'pending_approval' && i.stage === 'design').length;
+            const kiteLastItem = itemsArray.find(i => i.design && (i.stage === 'design')) || null;
+
+            // ORIN: package-ready items (published_local)
+            const orinPublished = itemsArray.filter(i => i.status === 'published_local' || i.stage === 'done').length;
+            const orinApproval = itemsArray.filter(i => i.status === 'pending_approval' && i.stage === 'publish' || i.stage === 'done').length;
+            const orinLastAction = activity.find(a => a.message && a.message.includes('saved as local publish package')) || null;
+            const orinLastItem = itemsArray.find(i => i.status === 'published_local' || i.stage === 'done') || null;
+
+            // Build each agent row
+            const agentItems = [
+                {
+                    name: 'ATLAS',
+                    status: lastAtlasItem ? 'Ready' : 'Idle / No active item',
+                    lastAction: lastAtlas ? lastAtlas.message.split('Atlas')[1]?.trim() : 'No Atlas activity',
+                    itemId: lastAtlasItem ? `Item ${lastAtlasItem.id}` : '—',
+                    todoCount: ideasWaiting
+                },
+                {
+                    name: 'VERA',
+                    status: veraGenerated > 0 ? 'Active' : 'Idle / No active item',
+                    lastAction: veraLastAction ? veraLastAction.message.split('Vera')[1]?.trim() : 'No Vera activity',
+                    itemId: veraLastItem ? `Item ${veraLastItem.id}` : '—',
+                    todoCount: copyWaiting
+                },
+                {
+                    name: 'KITE',
+                    status: kiteActivity.length > 0 ? 'Active' : 'Idle / No active item',
+                    lastAction: kiteLastAction ? kiteLastAction.message : 'No Kite activity',
+                    itemId: kiteLastItem ? `Item ${kiteLastItem.id}` : '—',
+                    todoCount: designWaiting
+                },
+                {
+                    name: 'ORIN',
+                    status: orinPublished > 0 ? 'Ready' : 'Idle / No active item',
+                    lastAction: orinLastAction ? orinLastAction.message : 'No ORIN activity',
+                    itemId: orinLastItem ? `Item ${orinLastItem.id}` : '—',
+                    todoCount: orinApproval
+                }
+            ];
+
+            let html = '';
+            for (const agent of agentItems) {
+                html += '<div class="agent-item">' +
+                    '<div class="agent-head">' +
+                        '<span class="agent-name">' + agent.name + '</span>' +
+                        '<span class="agent-status ' + (agent.status === 'Idle / No active item' ? 'status-pending' : 'status-ready') + '">' + agent.status + '</span>' +
+                    '</div>' +
+                    '<div class="agent-detail">' +
+                        '<span class="agent-field">Last: <strong>' + escapeHtml(agent.lastAction) + '</strong></span>' +
+                        '<span class="agent-field">Item: <strong>' + agent.itemId + '</strong></span>' +
+                        '<span class="agent-field">Todo: <strong>' + agent.todoCount + '</strong></span>' +
+                    '</div>' +
+                '</div>';
+            }
+            container.innerHTML = html;
+        }
+
+        // ---- SEARCH ----
+        document.getElementById('global-search').addEventListener('keyup', function() {
+            const q = this.value.toLowerCase();
+            const items = state.items || [];
+            const filtered = items.filter(item =>
+                item.topic.toLowerCase().includes(q) ||
+                (item.ideas && item.ideas.some(idea => idea.title && idea.title.toLowerCase().includes(q)))
+            );
+            // Scroll to top and show filtered count
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            console.log('Search results for "' + q + '": ' + filtered.length + ' items');
+        });
+
+        // ---- INIT ----
+        loadState();
+    </script>
+</body>
+</html>
