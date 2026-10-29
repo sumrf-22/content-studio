@@ -9,28 +9,7 @@
 <body>
     <div class="app">
         <!-- LEFT SIDEBAR -->
-        <aside class="sidebar">
-            <div class="sidebar-brand">
-                <div class="logo-icon">&#x1F3AC;</div>
-                <span class="logo-text">Content Studio</span>
-            </div>
-            <nav class="sidebar-nav">
-                <ul>
-                    <li><a href="#" class="active" data-section="dashboard"><span class="nav-icon">&#x25A4;</span> Dashboard</a></li>
-                    <li><a href="#" data-section="content-studio" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25B2;</span> Content Studio</a></li>
-                    <li><a href="#" data-section="ideas" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2726;</span> Ideas</a></li>
-                    <li><a href="#" data-section="pipeline" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25B7;</span> Content Pipeline</a></li>
-                    <li><a href="#" data-section="assets" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2603;</span> Assets</a></li>
-                    <li><a href="#" data-section="projects" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x224B;</span> Projects</a></li>
-                    <li><a href="#" data-section="analytics" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25A3;</span> Analytics</a></li>
-                    <li><a href="#" data-section="settings" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2699;</span> Settings</a></li>
-                </ul>
-            </nav>
-            <div class="sidebar-footer">
-                <span class="pipeline-status">&#x25CF; LIVE</span>
-                <span>v2.1</span>
-            </div>
-        </aside>
+        {% include "_sidebar.html" %}
 
         <!-- MAIN CONTENT -->
         <main class="main">
@@ -54,7 +33,7 @@
                         <span class="user-name">Admin</span>
                         <div class="user-menu-dropdown" style="display:none;">
                             <a href="#">Profile</a>
-                            <a href="#">Settings</a>
+                            <a href="/settings">Settings</a>
                             <a href="#">Logout</a>
                         </div>
                     </div>
@@ -613,18 +592,8 @@
         }
 
         // ---- NAVIGATION ----
-        document.querySelectorAll('.sidebar-nav a').forEach(a => {
-            a.addEventListener('click', function(e) {
-                e.preventDefault();
-                // Sections outside the dashboard are marked nav-disabled in the
-                // markup; they stay visible so the roadmap is obvious but do
-                // not pretend to navigate anywhere.
-                if (this.getAttribute('aria-disabled') === 'true') return;
-                document.querySelectorAll('.sidebar-nav a').forEach(x => x.classList.remove('active'));
-                this.classList.add('active');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            });
-        });
+        // Every sidebar item is a real link to a route, so the browser handles
+        // navigation and the server marks the active item.
 
         // ---- RECENT CONTENT EXPANSION ----
         document.getElementById('recent-toggle').addEventListener('click', function() {

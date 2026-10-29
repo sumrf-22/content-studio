@@ -108,9 +108,95 @@ STAGE_ACTIONS = {
 }
 
 
+COMING_SOON_PAGES = {
+    "content-studio": (
+        "Content Studio",
+        "Plan and produce a piece of content end to end",
+        "This workspace will combine idea generation, copy, design, and "
+        "publishing for a single item in one view.",
+    ),
+    "ideas": (
+        "Ideas",
+        "Browse and organise generated ideas",
+        "This page will collect ideas across items so they can be filtered, "
+        "favourited, and turned into content later.",
+    ),
+    "pipeline": (
+        "Content Pipeline",
+        "Track every item across the approval gates",
+        "This page will show the full pipeline as a board, including stalled "
+        "items and stage history.",
+    ),
+    "assets": (
+        "Assets",
+        "Review generated images and text packages",
+        "This page will provide an asset library with previews, sizes, and the "
+        "item each file belongs to.",
+    ),
+    "projects": (
+        "Projects",
+        "Group content into campaigns and projects",
+        "This page will let multiple items share a brief, schedule, and "
+        "publishing target.",
+    ),
+    "analytics": (
+        "Analytics",
+        "Measure output and approval throughput",
+        "This page will report counts, cycle time, and publishing activity from "
+        "the local pipeline data.",
+    ),
+}
+
+
+def _coming_soon(key):
+    title, subtitle, body = COMING_SOON_PAGES[key]
+    return render_template(
+        "coming_soon.html",
+        active=key,
+        page_title=title,
+        page_subtitle=subtitle,
+        page_body=body,
+    )
+
+
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", active="dashboard")
+
+
+@app.get("/settings")
+def settings_page():
+    return render_template("settings.html", active="settings")
+
+
+@app.get("/content-studio")
+def page_content_studio():
+    return _coming_soon("content-studio")
+
+
+@app.get("/ideas")
+def page_ideas():
+    return _coming_soon("ideas")
+
+
+@app.get("/content-pipeline")
+def page_content_pipeline():
+    return _coming_soon("pipeline")
+
+
+@app.get("/assets")
+def page_assets():
+    return _coming_soon("assets")
+
+
+@app.get("/projects")
+def page_projects():
+    return _coming_soon("projects")
+
+
+@app.get("/analytics")
+def page_analytics():
+    return _coming_soon("analytics")
 
 
 @app.get("/api/state")

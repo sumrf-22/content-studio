@@ -682,3 +682,52 @@ to the temporary clone and its pytest temp directories.
 ### Data changes
 
 None.
+
+## Post-audit Task 2 — Sidebar navigation (2026-10-29)
+
+**Status:** complete.
+
+### Baseline (recorded before changing)
+
+In the running dashboard, all seven non-dashboard sidebar links had `href="#"`,
+`class="nav-disabled"`, and `aria-disabled="true"`. Clicking "Content Studio"
+left the URL at `/`, kept Dashboard active, and did not load a page. The inline
+handler called `preventDefault()` for every sidebar link before checking
+`aria-disabled`, so even a real `href` would not navigate.
+
+### Changes
+
+- `templates/_sidebar.html`: one shared sidebar partial. Each item is a real
+  link (`/`, `/content-studio`, `/ideas`, `/content-pipeline`, `/assets`,
+  `/projects`, `/analytics`, `/settings`). The server passes `active` and the
+  partial adds `class="active"` plus `aria-current="page"` to the matching item.
+- `templates/index.html`: includes the partial and the click handler that called
+  `preventDefault()` was removed, so the browser navigates normally. The header
+  Settings link now points at `/settings`.
+- `templates/coming_soon.html`: shared layout for the six placeholder sections.
+- `templates/settings.html`: real `/settings` page (placeholder body for now;
+  Task 4 replaces it with provider management).
+- `dashboard/app.py`: `/settings` plus the six Coming-soon routes, driven by
+  `COMING_SOON_PAGES`.
+- `static/style.css`: styles for the secondary pages.
+- `tests/e2e/conftest.py`: the real-server fixture moved here so both e2e files
+  share it (`base_url`, `data`, `log`, `artifacts`).
+- `tests/e2e/test_ui_navigation.py`: clicks every sidebar link from the
+  dashboard, asserts the URL, `<title>`, exactly one active item with
+  `aria-current="page"`, that the sidebar contains no literal `&#` entity, and
+  that no console error, page error, or `/api/` response ≥ 400 occurred.
+  Screenshots: `tests/artifacts/e2e_nav_*.png`.
+
+### Verification
+
+- `pytest -q`: `83 passed, 2 deselected in 213.33s`.
+- `pytest -m e2e`: `2 passed, 83 deselected in 28.54s` (pipeline + navigation).
+- Browser screenshots confirmed the active highlight follows the page and the
+  sidebar icons render as glyphs. The first navigation run exposed a second
+  entity bug: the macro arguments were HTML entities and Jinja escaped them, so
+  the sidebar showed `&#x25A4;` as text. The icons are now passed as literal
+  characters and the e2e asserts no `&#` in the sidebar.
+
+### Data changes
+
+None.

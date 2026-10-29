@@ -1,0 +1,29 @@
+{% macro nav_link(key, href, icon, label) -%}
+<li>
+    <a href="{{ href }}"{% if active == key %} class="active" aria-current="page"{% endif %}>
+        <span class="nav-icon">{{ icon }}</span> {{ label }}
+    </a>
+</li>
+{%- endmacro %}
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="logo-icon">&#x1F3AC;</div>
+        <span class="logo-text">Content Studio</span>
+    </div>
+    <nav class="sidebar-nav" aria-label="Main navigation">
+        <ul>
+            {{ nav_link('dashboard', '/', '▤', 'Dashboard') }}
+            {{ nav_link('content-studio', '/content-studio', '▲', 'Content Studio') }}
+            {{ nav_link('ideas', '/ideas', '✦', 'Ideas') }}
+            {{ nav_link('pipeline', '/content-pipeline', '▷', 'Content Pipeline') }}
+            {{ nav_link('assets', '/assets', '☃', 'Assets') }}
+            {{ nav_link('projects', '/projects', '≋', 'Projects') }}
+            {{ nav_link('analytics', '/analytics', '▣', 'Analytics') }}
+            {{ nav_link('settings', '/settings', '⚙', 'Settings') }}
+        </ul>
+    </nav>
+    <div class="sidebar-footer">
+        <span class="pipeline-status">&#x25CF; LIVE</span>
+        <span>v2.1</span>
+    </div>
+</aside>

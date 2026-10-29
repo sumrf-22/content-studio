@@ -1286,3 +1286,39 @@ html, body {
     background: rgba(231, 76, 60, 0.25);
     color: var(--danger);
 }
+
+/* ---- Secondary pages (settings / coming soon) ---- */
+.page-placeholder {
+    max-width: 760px;
+    padding: 36px;
+}
+
+.page-kicker {
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+
+.page-placeholder h2 {
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.page-placeholder p {
+    color: var(--text-muted);
+    line-height: 1.6;
+    max-width: 60ch;
+}
+
+.page-back {
+    display: inline-block;
+    margin-top: 20px;
+    text-decoration: none;
+}
