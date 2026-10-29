@@ -27,9 +27,9 @@ def load_env_file():
 load_env_file()
 
 
-# Keys come ONLY from the environment. No hardcoded defaults, so secrets
-# never ship in source. Without a key the app runs in MOCK_MODE (no real
-# API calls are attempted).
+# Legacy provider variables. Since the BYOK settings page landed, the live path
+# reads `data/settings/providers.json` and these are ignored by generation.
+# They are still loaded so an old `.env` keeps working instead of crashing.
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
 BRAND_NAME = os.getenv("BRAND_NAME", "My Brand")

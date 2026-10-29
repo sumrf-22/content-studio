@@ -18,14 +18,376 @@
                 </div>
             </header>
 
-            <div class="grid" style="flex:1; overflow-y:auto; padding:16px 24px;">
-                <section class="card page-placeholder">
-                    <span class="page-kicker">Settings</span>
-                    <h2>Model providers</h2>
-                    <p>Provider management will appear here.</p>
+            <div class="settings-page">
+                <section class="card settings-mode" id="mode-card">
+                    <span class="page-kicker">Current mode</span>
+                    <h2 id="mode-title">
+                        {% if mode.mode == "live" %}
+                        Live — {{ mode.provider }}
+                        {% elif mode.mode == "error" %}
+                        Configuration error
+                        {% else %}
+                        Mock mode
+                        {% endif %}
+                    </h2>
+                    <p id="mode-detail">
+                        {% if mode.mode == "live" %}
+                        Generation uses {{ mode.model }} through the default provider.
+                        {% elif mode.mode == "error" %}
+                        {{ mode.reason }}
+                        {% else %}
+                        No enabled provider with an API key is set as the default.
+                        Generated content is deterministic and no network request is made.
+                        {% endif %}
+                    </p>
+                </section>
+
+                <section class="card settings-providers">
+                    <div class="settings-section-head">
+                        <div>
+                            <h2>Model providers</h2>
+                            <p class="settings-hint">
+                                Keys are encrypted at rest. Only the last four characters
+                                are stored in plain text, and the full key is never returned.
+                            </p>
+                        </div>
+                        <button class="btn-secondary" id="refresh-providers" type="button">Refresh</button>
+                    </div>
+                    <div id="provider-list" class="provider-list">
+                        <div class="empty">Loading providers…</div>
+                    </div>
+                </section>
+
+                <section class="card settings-form-card">
+                    <h2 id="form-title">Add a provider</h2>
+                    <p class="settings-hint">
+                        One OpenAI-compatible adapter is used for every provider:
+                        <code>POST {base_url}/chat/completions</code> with Bearer auth.
+                    </p>
+
+                    <form id="provider-form" autocomplete="off">
+                        <input type="hidden" id="provider-id" value="">
+
+                        <label class="field">
+                            <span>Preset</span>
+                            <select id="provider-preset">
+                                <option value="custom">Custom provider</option>
+                                <option value="openrouter">OpenRouter</option>
+                                <option value="sensenova">SenseNova</option>
+                                <option value="omniroute">OmniRoute (self-hosted)</option>
+                            </select>
+                        </label>
+                        <p class="preset-note" id="preset-note"></p>
+
+                        <label class="field">
+                            <span>Name</span>
+                            <input id="provider-name" type="text" maxlength="80" required
+                                   placeholder="e.g. OpenRouter">
+                        </label>
+
+                        <label class="field">
+                            <span>Base URL</span>
+                            <input id="provider-base-url" type="url" maxlength="500" required
+                                   placeholder="https://provider.example/api/v1">
+                            <small>Must start with https:// (http:// is allowed for localhost).</small>
+                        </label>
+
+                        <label class="field">
+                            <span>Model</span>
+                            <input id="provider-model" type="text" maxlength="200" required
+                                   placeholder="e.g. openrouter/free">
+                        </label>
+
+                        <label class="field">
+                            <span>API key</span>
+                            <input id="provider-api-key" type="password" maxlength="4096"
+                                   placeholder="Paste the provider API key">
+                            <small id="key-hint">Encrypted with CONTENT_STUDIO_SECRET_KEY before saving.</small>
+                        </label>
+
+                        <label class="checkbox-field">
+                            <input id="provider-enabled" type="checkbox" checked>
+                            <span>Enabled</span>
+                        </label>
+
+                        <div class="form-actions">
+                            <button class="btn-primary" type="submit" id="save-provider">Add provider</button>
+                            <button class="btn-secondary" type="button" id="cancel-edit" hidden>Cancel edit</button>
+                        </div>
+                    </form>
                 </section>
             </div>
         </main>
     </div>
+
+    <script>
+        const PRESETS = {
+            custom: {
+                base_url: "",
+                model: "",
+                note: ""
+            },
+            openrouter: {
+                base_url: "https://openrouter.ai/api/v1",
+                model: "openrouter/free",
+                note: "Verified against openrouter.ai/docs: OpenAI-compatible /chat/completions, Bearer auth, and the openrouter/free free-model router."
+            },
+            sensenova: {
+                base_url: "https://token.sensenova.cn/v1",
+                model: "sensenova-6.7-flash-lite",
+                note: "Verified against the official OpenSenseNova API guide: OpenAI-compatible /chat/completions with Bearer auth. A free token plan is advertised on the SenseNova platform."
+            },
+            omniroute: {
+                base_url: "",
+                model: "",
+                note: "OmniRoute is self-hosted or hosted by Cheaper Inference, so there is no single public base URL. Enter your deployment URL (ending in /v1) and one of its model IDs."
+            }
+        };
+
+        const list = document.getElementById("provider-list");
+        const form = document.getElementById("provider-form");
+        const idField = document.getElementById("provider-id");
+        const title = document.getElementById("form-title");
+        const saveButton = document.getElementById("save-provider");
+        const cancelButton = document.getElementById("cancel-edit");
+        const keyInput = document.getElementById("provider-api-key");
+        const keyHint = document.getElementById("key-hint");
+        const presetSelect = document.getElementById("provider-preset");
+
+        function escapeHtml(value) {
+            return String(value == null ? "" : value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function showMode(mode) {
+            const heading = document.getElementById("mode-title");
+            const detail = document.getElementById("mode-detail");
+            if (!mode) return;
+            if (mode.mode === "live") {
+                heading.textContent = "Live — " + mode.provider;
+                detail.textContent = "Generation uses " + mode.model + " through the default provider.";
+                document.getElementById("mode-card").dataset.mode = "live";
+            } else if (mode.mode === "error") {
+                heading.textContent = "Configuration error";
+                detail.textContent = mode.reason || "Provider settings could not be read.";
+                document.getElementById("mode-card").dataset.mode = "error";
+            } else {
+                heading.textContent = "Mock mode";
+                detail.textContent = mode.reason || "No enabled provider with an API key is set as the default.";
+                document.getElementById("mode-card").dataset.mode = "mock";
+            }
+        }
+
+        function renderProviders(providers) {
+            if (!providers || !providers.length) {
+                list.innerHTML = '<div class="empty">No providers yet. Add one below to leave mock mode.</div>';
+                return;
+            }
+
+            list.innerHTML = providers.map(provider => {
+                const badges = [];
+                if (provider.is_default) badges.push('<span class="badge badge-default">Default</span>');
+                badges.push(provider.enabled
+                    ? '<span class="badge badge-enabled">Enabled</span>'
+                    : '<span class="badge badge-disabled">Disabled</span>');
+
+                return '<article class="provider-row" data-provider-id="' + escapeHtml(provider.id) + '">' +
+                    '<div class="provider-main">' +
+                        '<div class="provider-title">' +
+                            '<strong>' + escapeHtml(provider.name) + '</strong>' +
+                            badges.join("") +
+                        '</div>' +
+                        '<div class="provider-meta">' +
+                            '<span><code>' + escapeHtml(provider.base_url) + '</code></span>' +
+                            '<span>Model: <code>' + escapeHtml(provider.model) + '</code></span>' +
+                            '<span>Key: <code>' + escapeHtml(provider.api_key || "(not set)") + '</code></span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="provider-actions">' +
+                        '<button class="btn-secondary" type="button" data-action="test">Test</button>' +
+                        '<button class="btn-secondary" type="button" data-action="edit">Edit</button>' +
+                        (provider.is_default ? "" :
+                            '<button class="btn-secondary" type="button" data-action="default">Set default</button>') +
+                        '<button class="btn-danger" type="button" data-action="delete">Delete</button>' +
+                    '</div>' +
+                '</article>';
+            }).join("");
+        }
+
+        async function api(path, options) {
+            const response = await fetch(path, options);
+            let payload = {};
+            try {
+                payload = await response.json();
+            } catch (error) {
+                payload = {};
+            }
+            if (!response.ok) {
+                throw new Error(payload.error || ("Request failed with HTTP " + response.status));
+            }
+            return payload;
+        }
+
+        async function loadProviders() {
+            try {
+                const data = await api("/api/settings/providers");
+                showMode(data.mode);
+                renderProviders(data.providers);
+            } catch (error) {
+                list.innerHTML = '<div class="empty">Could not load providers: ' + escapeHtml(error.message) + '</div>';
+            }
+        }
+
+        function resetForm() {
+            form.reset();
+            idField.value = "";
+            document.getElementById("provider-enabled").checked = true;
+            title.textContent = "Add a provider";
+            saveButton.textContent = "Add provider";
+            cancelButton.hidden = true;
+            keyHint.textContent = "Encrypted with CONTENT_STUDIO_SECRET_KEY before saving.";
+            presetSelect.value = "custom";
+            applyPreset();
+        }
+
+        function applyPreset() {
+            const preset = PRESETS[presetSelect.value] || PRESETS.custom;
+            document.getElementById("provider-base-url").value = preset.base_url;
+            document.getElementById("provider-model").value = preset.model;
+            document.getElementById("preset-note").textContent = preset.note;
+        }
+
+        presetSelect.addEventListener("change", applyPreset);
+
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const providerId = idField.value;
+            const payload = {
+                name: document.getElementById("provider-name").value.trim(),
+                base_url: document.getElementById("provider-base-url").value.trim(),
+                model: document.getElementById("provider-model").value.trim(),
+                api_key: keyInput.value.trim(),
+                enabled: document.getElementById("provider-enabled").checked
+            };
+
+            if (providerId && !payload.api_key) {
+                delete payload.api_key;
+            }
+
+            saveButton.disabled = true;
+            try {
+                if (providerId) {
+                    await api("/api/settings/providers/" + encodeURIComponent(providerId), {
+                        method: "PUT",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    await api("/api/settings/providers", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify(payload)
+                    });
+                }
+                resetForm();
+                await loadProviders();
+            } catch (error) {
+                alert("Could not save provider: " + error.message);
+            } finally {
+                saveButton.disabled = false;
+            }
+        });
+
+        cancelButton.addEventListener("click", resetForm);
+        document.getElementById("refresh-providers").addEventListener("click", loadProviders);
+
+        list.addEventListener("click", async function (event) {
+            const button = event.target.closest("button[data-action]");
+            if (!button) return;
+            const row = button.closest(".provider-row");
+            if (!row) return;
+            const providerId = row.dataset.providerId;
+            const action = button.dataset.action;
+
+            if (action === "delete") {
+                if (!confirm("Delete this provider? Its encrypted key will be removed.")) return;
+                button.disabled = true;
+                try {
+                    await api("/api/settings/providers/" + encodeURIComponent(providerId), {
+                        method: "DELETE"
+                    });
+                    if (idField.value === providerId) resetForm();
+                    await loadProviders();
+                } catch (error) {
+                    alert("Could not delete provider: " + error.message);
+                } finally {
+                    button.disabled = false;
+                }
+                return;
+            }
+
+            if (action === "default") {
+                button.disabled = true;
+                try {
+                    await api("/api/settings/providers/" + encodeURIComponent(providerId), {
+                        method: "PUT",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({is_default: true})
+                    });
+                    await loadProviders();
+                } catch (error) {
+                    alert("Could not set the default: " + error.message);
+                } finally {
+                    button.disabled = false;
+                }
+                return;
+            }
+
+            if (action === "test") {
+                button.disabled = true;
+                const original = button.textContent;
+                button.textContent = "Testing…";
+                try {
+                    const result = await api(
+                        "/api/settings/providers/" + encodeURIComponent(providerId) + "/test",
+                        {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}
+                    );
+                    alert(result.message || "Provider responded successfully.");
+                } catch (error) {
+                    alert("Provider test failed: " + error.message);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = original;
+                }
+                return;
+            }
+
+            if (action === "edit") {
+                const data = await api("/api/settings/providers");
+                const provider = (data.providers || []).find(item => item.id === providerId);
+                if (!provider) return;
+                idField.value = provider.id;
+                document.getElementById("provider-name").value = provider.name;
+                document.getElementById("provider-base-url").value = provider.base_url;
+                document.getElementById("provider-model").value = provider.model;
+                document.getElementById("provider-enabled").checked = provider.enabled;
+                keyInput.value = "";
+                presetSelect.value = "custom";
+                document.getElementById("preset-note").textContent = "";
+                title.textContent = "Edit " + provider.name;
+                saveButton.textContent = "Save changes";
+                cancelButton.hidden = false;
+                keyHint.textContent = "Leave blank to keep the current key (" + (provider.api_key || "not set") + ").";
+                document.getElementById("provider-name").focus();
+            }
+        });
+
+        applyPreset();
+        loadProviders();
+    </script>
 </body>
 </html>

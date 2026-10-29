@@ -29,6 +29,109 @@ Base URL: `http://127.0.0.1:8080` (override with `CONTENT_STUDIO_HOST` /
 | `POST` | `/api/idea` | Create an item from a topic. |
 | `POST` | `/api/action/<id>` | Advance, regenerate, or publish an item. |
 | `GET` | `/api/asset/<path>` | Serve a preview asset or text artifact. |
+| `GET` | `/api/settings/providers` | List providers (masked keys) and the current mode. |
+| `POST` | `/api/settings/providers` | Add a provider. |
+| `PUT` | `/api/settings/providers/<provider_id>` | Update a provider. |
+| `DELETE` | `/api/settings/providers/<provider_id>` | Delete a provider. |
+| `POST` | `/api/settings/providers/<provider_id>/test` | Send one real completion to check the key. |
+
+Pages (HTML): `/`, `/content-studio`, `/ideas`, `/content-pipeline`, `/assets`,
+`/projects`, `/analytics`, and `/settings`. The six middle pages are
+Coming-soon placeholders.
+
+## Provider settings
+
+### Shapes
+
+Provider object (keys are masked; the raw key is never returned):
+
+```json
+{
+  "id": "9f2c1b7a4d10",
+  "name": "OpenRouter",
+  "base_url": "https://openrouter.ai/api/v1",
+  "model": "openrouter/free",
+  "enabled": true,
+  "is_default": true,
+  "has_key": true,
+  "api_key": "sk-or-...ab12",
+  "api_key_last4": "ab12"
+}
+```
+
+Mode object:
+
+```json
+{"mode": "live", "provider_id": "9f2c1b7a4d10", "provider": "OpenRouter", "model": "openrouter/free"}
+{"mode": "mock", "reason": "No enabled provider with an API key is set as the default."}
+```
+
+### `GET /api/settings/providers`
+
+`200 {"providers": [...], "mode": {...}}`. `500` when `providers.json` is
+unreadable (`{"error": "..."}`); fix or remove the file.
+
+### `POST /api/settings/providers`
+
+Request:
+
+```json
+{"name": "OpenRouter",
+ "base_url": "https://openrouter.ai/api/v1",
+ "model": "openrouter/free",
+ "api_key": "sk-or-v1-...",
+ "enabled": true}
+```
+
+`201` with the provider object. The first provider automatically becomes the
+default.
+
+| Condition | Status | `error` |
+|---|---|---|
+| Missing `name`, `base_url`, `model`, or `api_key` | `400` | `<field> is required` |
+| `base_url` not `https://`, or `http://` on a non-local host | `400` | `base_url must start with https:// (http:// is allowed only for localhost)` |
+| Credentials, query, or fragment in `base_url` | `400` | validation message |
+| Duplicate name (case-insensitive) | `400` | `a provider with that name already exists` |
+| `CONTENT_STUDIO_SECRET_KEY` invalid | `400` | `... is not a valid Fernet key ...` |
+| Body is not JSON (with a body) | `415` | `content-type must be application/json` |
+| Cross-origin / non-same-site mutation | `403` | `... blocked` |
+
+### `PUT /api/settings/providers/<provider_id>`
+
+Accepts any subset of `name`, `base_url`, `model`, `api_key`, `enabled`, and
+`is_default`. An **empty or omitted `api_key` keeps the stored ciphertext**; a
+non-empty value re-encrypts and updates the mask. `{"is_default": true}`
+promotes this provider and demotes the rest. `200` with the provider, `404` for
+an unknown id, `400` for the validation failures above.
+
+### `DELETE /api/settings/providers/<provider_id>`
+
+`200 {"deleted": "<id>"}`. If the deleted provider was the default, the first
+remaining enabled provider with a key is promoted (otherwise the first
+remaining provider). `404` for an unknown id.
+
+### `POST /api/settings/providers/<provider_id>/test`
+
+Sends `Reply with the single word OK.` through the adapter (15s timeout, two
+attempts).
+
+```json
+200 {"ok": true, "provider_id": "9f2c1b7a4d10", "message": "Provider responded successfully.", "reply": "OK"}
+502 {"ok": false, "error": "Provider 'OpenRouter' rejected the API key (HTTP 401)."}
+404 {"ok": false, "error": "provider not found"}
+```
+
+The error text is sanitized: it never contains the API key.
+
+### Provider failures during generation
+
+A failed default provider raises `LLMError`, which the app maps to:
+
+```
+502 {"error": "Provider 'Name' ..."}
+```
+
+The item is not advanced and is not silently re-generated in mock mode.
 
 ### `GET /api/state`
 
@@ -167,7 +270,8 @@ resolved-path check are covered in `tests/test_security.py`.
 | `403` | Cross-origin/cross-site request, or asset outside the allowlist. |
 | `404` | Unknown item, unknown asset, or normalized traversal path. |
 | `415` | Mutating body was not JSON. |
-| `500` | Unexpected agent/network failure (for example Atlas live-mode error or an imgbb upload error). |
+| `500` | Unexpected agent/network failure (for example an imgbb upload error) or unreadable provider settings. |
+| `502` | The configured model provider failed (auth, rate limit, timeout, 5xx). |
 
 ## Examples
 

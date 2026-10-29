@@ -25,12 +25,14 @@ data/
 │       └── frame_1.png ...      STORY_POLL
 ├── published/
 │   └── item_<id>.json           snapshot written at publish time
+├── settings/
+│   └── providers.json           encrypted BYOK provider list (gitignored)
 └── _backup_<timestamp>/         operator backups (gitignored)
 ```
 
-`data/state.json`, `data/renders/`, `data/published/`, and `data/_backup_*/` are
-gitignored. A fresh clone has only `data/.gitkeep` and starts with an empty
-pipeline, which is the intended behaviour (D-015).
+`data/state.json`, `data/renders/`, `data/published/`, `data/settings/`, and
+`data/_backup_*/` are gitignored. A fresh clone has only `data/.gitkeep` and
+starts with an empty pipeline, which is the intended behaviour (D-015).
 
 The root is overridable with `CONTENT_STUDIO_DATA_DIR`. It is resolved once at
 import time, so set it before starting the process (D-018).
@@ -198,6 +200,47 @@ The repository has two historical backups:
 `data/_backup_20261029_092442/` (Phase 0 baseline) and
 `data/_backup_20261029_phase3/` (17 orphan render artifacts plus a
 `MANIFEST.json`). Both are gitignored and untouched by the app.
+
+## `settings/providers.json`
+
+Managed by `core/settings.py`, not `core/state.py`. One file, whole-document
+rewrite, same atomic-replace pattern as state.
+
+```json
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "9f2c1b7a4d10",
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openrouter/free",
+      "enabled": true,
+      "is_default": true,
+      "api_key": "gAAAAAB... (Fernet token)",
+      "api_key_last4": "ab12",
+      "created_at": "2026-10-29T10:00:00+00:00",
+      "updated_at": "2026-10-29T10:00:00+00:00"
+    }
+  ]
+}
+```
+
+Invariants:
+
+- `api_key` is always a Fernet token encrypted with
+  `CONTENT_STUDIO_SECRET_KEY`; the raw key is never stored.
+- `api_key_last4` is the only plaintext fragment and only feeds the mask.
+- At most one provider has `is_default: true`. The first provider is promoted
+  automatically; deleting the default promotes a replacement.
+- The mode is live only when the default is `enabled` and has `api_key`;
+  otherwise generation is mock.
+- A missing/invalid secret key makes decryption fail loudly; the file is not
+  rewritten on that path.
+
+`data/settings/` is gitignored, so a clone does not inherit provider state. The
+same "back up, don't delete" rule applies: copy the folder before editing it by
+hand.
 
 ## Retention and cleanup
 

@@ -12,7 +12,7 @@ Atlas (ideas) -> human review -> Vera (copy) -> human review
 ```
 
 Only the publisher is mocked. Rendering is real, and the LLM layer is live when
-`OPENROUTER_API_KEY` is set.
+a default provider with an encrypted key is saved in Settings.
 
 ## Runtime topology
 
@@ -23,7 +23,9 @@ Browser (templates/index.html + static/style.css)
 Flask app  (dashboard/app.py, binds 127.0.0.1:8080 by default)
    |-- core/state.py    JSON store, ids, activity, locking, atomic saves
    |-- core/models.py   canonical copy schemas
-   |-- core/llm.py      OpenRouter call, or deterministic mock output
+   |-- core/settings.py encrypted provider store, validation, default/mode
+   |-- core/providers.py OpenAI-compatible adapter, retries, sanitized errors
+   |-- core/llm.py      default provider call, or deterministic mock output
    |-- agents/atlas.py  topic -> idea list
    |-- agents/vera.py   idea + format -> canonical copy
    |-- agents/kite.py   copy -> PNG / text assets (Pillow)
@@ -41,17 +43,22 @@ residual risks in `docs/AUDIT_RESULT.md`.
 
 | Module | Responsibility |
 |---|---|
-| `run.py` | Entrypoint. Resolves host/port/debug from the environment, refuses a non-loopback bind without a token, starts Flask. |
-| `config.py` | Loads `.env` without overriding real environment variables; exposes keys, model, brand, token, publisher. |
+| `run.py` | Entrypoint. Resolves host/port/debug from the environment, refuses a non-loopback bind without a token, starts Flask, prints the effective provider mode. |
+| `config.py` | Loads `.env` without overriding real environment variables; exposes brand, token, publisher, imgbb key, and the legacy OpenRouter variables (no longer used for generation). |
 | `core/state.py` | Data root resolution, `load()`/`save()`, max+1 ids, activity log, lock, atomic replace with Windows retries, corrupt-file fallback. |
 | `core/models.py` | `SUPPORTED_FORMATS`, `normalize_copy()`, `fallback_copy()`. The single source of truth for copy field names. |
-| `core/llm.py` | `generate(prompt)`: one OpenRouter request in live mode, one deterministic mock router otherwise. |
+| `core/settings.py` | Provider CRUD in `data/settings/providers.json`, Fernet encrypt/decrypt, URL/field validation, mask, default provider, mode info, auto-generated `CONTENT_STUDIO_SECRET_KEY`. |
+| `core/providers.py` | One OpenAI-compatible `POST {base_url}/chat/completions` adapter with Bearer auth, bounded retries, timeout, and sanitized `ProviderError` messages. |
+| `core/llm.py` | `generate(prompt)`: the default provider in live mode, one deterministic mock router otherwise. Raises `LLMError` on provider failure. |
 | `agents/atlas.py` | Builds the idea prompt, parses JSON or plain text, normalizes each idea, dedupes, keeps at most seven. |
 | `agents/vera.py` | Builds a per-format prompt, parses section-based output, normalizes through `core.models`, falls back to valid copy on failure. |
 | `agents/kite.py` | Validates copy, renders per-format assets into `data/renders/item_<id>/`, optionally uploads to imgbb, returns project-relative paths. |
 | `agents/orin.py` | Mock publisher. Writes `data/published/item_<id>.json` and records mode/target; refuses non-mock modes. |
-| `dashboard/app.py` | Routes, auth/CSRF guards, security headers, stage-action state machine, asset allowlist. |
+| `dashboard/app.py` | Routes, auth/CSRF guards, security headers, stage-action state machine, asset allowlist, provider settings endpoints, `LLMError` → 502. |
 | `templates/index.html` | Dashboard markup and inline JavaScript: polling, approval queue, previews, event delegation. |
+| `templates/_sidebar.html` | Shared sidebar partial. The server passes `active`; the matching link gets `class="active"` and `aria-current="page"`. |
+| `templates/settings.html` | BYOK provider management: mode card, provider list with Test/Edit/Delete/Set default, add/edit form with presets. |
+| `templates/coming_soon.html` | Shared placeholder layout for the six secondary sections. |
 | `static/style.css` | Theme, layout, approval and preview styling. |
 
 ## Request lifecycle
@@ -72,6 +79,27 @@ residual risks in `docs/AUDIT_RESULT.md`.
    - The item is mutated, activity is appended, and `save()` writes the whole
      state atomically.
 5. `GET /api/asset/<path>` serves preview files from the two allowlisted roots.
+
+## Provider settings lifecycle
+
+`/settings` is a real page rendered with the current mode. The browser then
+calls `GET /api/settings/providers` and re-renders the list after every change.
+
+1. **Create:** `POST /api/settings/providers` validates name/URL/model/key,
+   encrypts the key, and writes `data/settings/providers.json` atomically. The
+   first provider becomes the default.
+2. **Use:** `core/settings.default_provider()` returns the default only when it
+   is enabled and has a stored key. `core/llm.generate()` then calls
+   `core/providers.chat()`; otherwise it returns deterministic mock output.
+3. **Test:** `POST /api/settings/providers/<id>/test` sends one short
+   completion and returns `{ok: true, ...}` or a sanitized `502`.
+4. **Update:** `PUT` accepts a subset; an empty `api_key` keeps the stored
+   ciphertext.
+5. **Delete:** the key and row are removed; if it was the default, the first
+   remaining enabled provider with a key is promoted.
+
+A provider failure raises `LLMError`, which the app maps to `502`; the item is
+not advanced, and no other provider or mock output is used as a substitute.
 
 ## Stage and action machine
 

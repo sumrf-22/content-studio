@@ -37,27 +37,31 @@ markers =
 from the project root. `addopts` excludes e2e from the default run so a normal
 `pytest` does not need a browser.
 
-Current results (2026-10-29, Phase 6 code):
+Current results (2026-10-29, after post-audit Tasks 1–4):
 
 | Command | Result |
 |---|---|
-| `pytest -q` | `83 passed, 1 deselected in 224.67s` |
-| `pytest -m e2e` | `1 passed, 83 deselected in 20.36s` |
+| `pytest -q` | `144 passed, 3 deselected in 251.41s` |
+| `pytest -m e2e` | `3 passed, 144 deselected in 32.79s` |
 
 ## Test layout
 
 | File | Tests | Focus |
 |---|---|---|
-| `tests/conftest.py` | — | Fixtures: isolated data root and mock LLM. |
+| `tests/conftest.py` | — | Fixtures: isolated data root and provider settings/secret. |
 | `tests/test_smoke.py` | 2 | Dashboard renders; `/api/state` shape. |
-| `tests/test_phase1.py` | 5 | Real-mode call timing, stage/action vocabulary, `select_idea`, slide panel geometry. |
+| `tests/test_phase1.py` | 5 | Default-provider call timing/shape, stage/action vocabulary, `select_idea`, slide panel geometry. |
 | `tests/test_phase2.py` | 18 | One idea per format, canonical Vera shape per format, per-format render folder/assets, no placeholder folders, relative paths, mixed-case parser. |
 | `tests/test_phase3.py` | 7 | Id collisions, concurrent creates, missing/overlong topic, exact title selection, unknown format fallback. |
-| `tests/test_renderer.py` | 11 | Canvas size and PNG output per format, slide counts, REEL scene cards/scripts, real newlines, invalid copy, item folder. |
+| `tests/test_renderer.py` | 12 | Canvas size and PNG output per format, non-blank STORY_POLL frames and thumbnail band, slide counts, REEL scene cards/scripts, real newlines, invalid copy, item folder. |
 | `tests/test_api.py` | 17 | Full pipeline through Flask, all seven formats, rejection paths, render rollback, post-publish lockout, text assets. |
 | `tests/test_security.py` | 16 | Asset allowlist/traversal, headers, form and cross-origin rejection, token auth and cookie flow. |
+| `tests/test_settings.py` | 45 | Fernet round-trip, raw key absent from disk/API, masks, empty-key update, auto `.env` key, no rotation on decrypt, URL/field validation, default/mode logic, CSRF on all provider routes, corrupt file handling, 502 on provider failure. |
+| `tests/test_providers.py` | 15 | Local HTTP server: request shape, Bearer header, 401, 429 retry + `Retry-After`, persistent 429, 5xx retry, timeout, bad shape, Test endpoint success/401, `LLMError` instead of mock fallback. |
 | `tests/test_publisher.py` | 7 | Mock default, package contents, refusal of `instagram`/`meta`/`graph`/`live`, no state change on refusal. |
-| `tests/e2e/test_ui_pipeline.py` | 1 | Real server, real Chromium, two formats from create to published. |
+| `tests/e2e/test_ui_pipeline.py` | 1 | Real server, real Chromium, two formats from create to published, story-thumbnail crop. |
+| `tests/e2e/test_ui_navigation.py` | 1 | Every sidebar link loads the right page, one active item, no entity text, no console/API errors. |
+| `tests/e2e/test_ui_settings.py` | 1 | Add a provider → masked key → live mode → edit keeps key → delete → mock mode. |
 
 Parametrization explains why the file counts are higher than the number of test
 functions: the seven-format renderer/API tests and the four refused publisher
@@ -82,11 +86,13 @@ Any test that writes state, renders, publishes, or fetches `/api/asset` must
 request this fixture. It is not autouse because pure parser/canvas tests do not
 need it, but asking for it is always safe.
 
-### `mock_llm` (autouse)
+### `isolate_provider_settings` (autouse)
 
-Every test forces `core.llm.MOCK_MODE = True`, so a developer's local
-`OPENROUTER_API_KEY` can never turn a test into a live network call. The e2e
-subprocess removes the key from its environment for the same reason.
+Points `core.settings._settings_dir` at `tmp_path`, points the `.env` writer at
+`tmp_path/provider.env`, and sets `CONTENT_STUDIO_SECRET_KEY` to a fixed
+test-only Fernet key. No test can read or write the operator's provider file or
+` .env`. The browser suite sets the same kind of key in the subprocess
+environment (`tests/e2e/conftest.py`).
 
 ### Local fixtures
 
@@ -94,6 +100,9 @@ subprocess removes the key from its environment for the same reason.
 - `tests/test_security.py`: `project_root`, `client`, `token`.
 - `tests/test_renderer.py`: `render_dir` alias over `isolated_data`.
 - `tests/test_api.py` / `test_publisher.py`: `client` over `isolated_data`.
+- `tests/test_settings.py` / `test_providers.py`: `client`, `provider_dir`, and a
+  `provider_server` fixture that runs a `ThreadingHTTPServer` on 127.0.0.1 with a
+  per-test response plan and request log.
 
 ## What the fast suite guarantees
 
@@ -116,33 +125,51 @@ subprocess removes the key from its environment for the same reason.
 
 ## Browser e2e
 
-`tests/e2e/test_ui_pipeline.py` is a single test marked `e2e`.
+Three tests are marked `e2e` and share the `server` fixture in
+`tests/e2e/conftest.py`.
 
-What it does:
+What the fixture does:
 
 1. Picks a free port and a temporary data directory.
 2. Starts the real `run.py` as a subprocess with
-   `CONTENT_STUDIO_DATA_DIR=<tmp>`, `CONTENT_STUDIO_HOST=127.0.0.1`, and the
+   `CONTENT_STUDIO_DATA_DIR=<tmp>`, `CONTENT_STUDIO_HOST=127.0.0.1`,
+   a fixed test-only `CONTENT_STUDIO_SECRET_KEY`, and the
    OpenRouter/token/debug variables removed.
-3. Waits for `/api/state` to answer, then launches Chromium with Playwright.
-4. For CAROUSEL and STORY_POLL, clicks through the UI only:
+3. Waits for `/api/state` to answer, then hands the base URL to the test.
+
+`test_ui_pipeline.py` drives the approval pipeline:
+
+1. Launches Chromium with Playwright.
+2. For CAROUSEL and STORY_POLL, clicks through the UI only:
    topic → Generate Ideas → select an idea row → Use Selected Idea →
    Approve Copy → check preview dimensions → Approve Design → Publish locally.
-5. Asserts the item is `done` / `published_local` / `published=true` and that
+3. Asserts the item is `done` / `published_local` / `published=true` and that
    the publish snapshot records `mode=mock`.
-6. Records any console error, page error, or `/api/` response ≥ 400 and fails if
+4. Asserts the story card thumbnail is a loaded 1080×1920 image with a
+   top-anchored crop, and that `#recent-toggle` shows real arrow characters.
+5. Records any console error, page error, or `/api/` response ≥ 400 and fails if
    any occurred.
+
+`test_ui_navigation.py` clicks every sidebar link from the dashboard and asserts
+the URL, `<title>`, exactly one `.active` item with `aria-current="page"`, no
+literal `&#` entity text, and a clean console/API log.
+
+`test_ui_settings.py` opens `/settings`, asserts mock mode, adds an OpenRouter
+provider from the preset, asserts the row shows `sk-or-...ab12`, the model, the
+Default/Enabled badges, and live mode, edits it (blank key keeps the mask), then
+deletes it and asserts mock mode and an empty list. The raw key must not appear
+in the DOM, and the console/API log must be clean.
 
 Artifacts land in `tests/artifacts/` (gitignored):
 
-- `e2e_carousel_design.png`
-- `e2e_story_poll_design.png`
-- `e2e_dashboard.png`
+- `e2e_carousel_design.png`, `e2e_story_poll_design.png`, `e2e_dashboard.png`
+- `e2e_nav_*.png`
+- `e2e_settings_empty.png`, `e2e_settings_provider.png`, `e2e_settings_deleted.png`
 - `e2e_server.log`
 
 Because the server is pointed at a temporary directory, the operator's real
-`data/` is never used; the published snapshot is checked inside the temporary
-directory.
+`data/` and `data/settings/` are never used; the published snapshot is checked
+inside the temporary directory.
 
 Requirements: `playwright==1.64.1` plus a browser binary.
 

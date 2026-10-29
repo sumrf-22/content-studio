@@ -1,28 +1,12 @@
 import json
 import re
 
-import requests
+import core.providers as providers
+import core.settings as settings
 
-from config import OPENROUTER_API_KEY, OPENROUTER_MODEL, MOCK_MODE
 
-
-def _real_generate(prompt):
-    """Call OpenRouter's chat-completions endpoint and return the text."""
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": OPENROUTER_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload["choices"][0]["message"]["content"]
+class LLMError(RuntimeError):
+    """The configured provider failed; the message is safe to display."""
 
 
 # Mock Vera output, one block per supported format. The mock routes on the
@@ -156,11 +140,28 @@ def _prompt_format(prompt):
 
 
 def generate(prompt):
-    # Real API mode only when a key is configured; MOCK_MODE is False only
-    # when OPENROUTER_API_KEY is set (see config.py).
-    if not MOCK_MODE:
-        return _real_generate(prompt)
+    # A configured default provider always wins. With none, the app stays in
+    # deterministic mock mode; it never falls back to a different provider and
+    # never silently uses the legacy OPENROUTER_API_KEY environment variable.
+    try:
+        provider = settings.default_provider()
+    except settings.SettingsError as exc:
+        raise LLMError(str(exc)) from exc
 
+    if provider:
+        try:
+            return providers.chat(
+                provider,
+                [{"role": "user", "content": prompt}],
+                timeout=120,
+            )
+        except providers.ProviderError as exc:
+            raise LLMError(str(exc)) from exc
+
+    return _mock_generate(prompt)
+
+
+def _mock_generate(prompt):
     p = prompt.lower()
 
     # --- Vera vs Atlas routing ---

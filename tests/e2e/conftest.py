@@ -14,6 +14,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 ARTIFACTS = Path(__file__).resolve().parent.parent / "artifacts"
 
+# Test-only Fernet key so the e2e run never writes a real secret to .env.
+E2E_SECRET_KEY = "2aDelJn6IDCS6GLihHkWIDDBspTt3v8jMVm7J-4dL98="
+
 
 def _free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -53,6 +56,8 @@ def server(tmp_path):
     env["CONTENT_STUDIO_HOST"] = "127.0.0.1"
     env["CONTENT_STUDIO_PORT"] = str(port)
     env["CONTENT_STUDIO_DATA_DIR"] = str(data_dir)
+    # Fixed test-only key: provider saves never touch the real ``.env``.
+    env["CONTENT_STUDIO_SECRET_KEY"] = E2E_SECRET_KEY
 
     log_path = ARTIFACTS / "e2e_server.log"
     log_handle = log_path.open("w", encoding="utf-8")

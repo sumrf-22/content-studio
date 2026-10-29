@@ -1,65 +1,95 @@
 # Integrations
 
-Content Studio has three external surfaces: OpenRouter for text generation,
-imgbb for optional image hosting, and publishing. Publishing is deliberately
-local-only. Nothing else leaves the machine.
+Content Studio has four external surfaces: model providers for text generation
+(BYO key, configured in Settings), imgbb for optional image hosting, and
+publishing. Publishing is deliberately local-only. Nothing else leaves the
+machine.
 
 | Integration | Required | Default state | Egress |
 |---|---|---|---|
-| OpenRouter | No | Mock mode when no key | Only with `OPENROUTER_API_KEY` |
+| Model provider (BYOK) | No | Mock mode until a default provider is saved | Only to the configured `base_url` |
 | imgbb | No | Disabled when no key | Only with `IMGBB_API_KEY` |
 | Instagram / Meta Graph | No | Disabled by design | None |
 
-## OpenRouter
+## Model providers (BYOK)
 
-### Configuration
+Text generation calls one OpenAI-compatible endpoint. The provider list lives in
+`data/settings/providers.json` and is managed from `/settings`; it is not read
+from `OPENROUTER_API_KEY` any more.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `OPENROUTER_API_KEY` | unset | Any non-empty value switches `MOCK_MODE` off. |
-| `OPENROUTER_MODEL` | `openrouter/free` | Model slug sent with every request. |
+### Adapter contract
 
-`config.py` loads `.env` first, but real environment variables win. The key is
-never hardcoded and `.env` is gitignored.
-
-### Request
-
-`core/llm.py::_real_generate`:
+`core/providers.py::chat`:
 
 ```
-POST https://openrouter.ai/api/v1/chat/completions
-Authorization: Bearer <OPENROUTER_API_KEY>
+POST {base_url}/chat/completions
+Authorization: Bearer <decrypted provider key>
 Content-Type: application/json
 
-{"model": "<OPENROUTER_MODEL>",
+{"model": "<provider model>",
  "messages": [{"role": "user", "content": "<prompt>"}]}
 ```
 
-Timeout is 120 seconds. There is no streaming, retry, backoff, or token-usage
-accounting. The response is read from `choices[0].message.content`.
+- `base_url` must be `https://…` (plain `http://` is allowed only for
+  `localhost` / `127.0.0.1` / `::1`) and must not contain credentials, a query,
+  or a fragment.
+- The response is read from `choices[0].message.content`.
+- `429`, `500`, `502`, `503`, and `504` are retried with exponential backoff
+  (three attempts by default, `Retry-After` honoured, capped at 5s). Timeouts,
+  connection failures, `401`/`403`, `404`, and malformed responses raise a
+  sanitized `ProviderError`.
+- There is no streaming and no token-usage accounting.
+- The general pipeline timeout is 120s; the Settings **Test** button uses a 15s
+  timeout and two attempts.
 
-Only free routing is used (`openrouter/free` by default). Do not point this at a
-paid model without an explicit budget decision.
+### Verified provider endpoints (checked 2026-10-29)
 
-### Mode switch
+| Preset | Base URL | Model | Auth | Status |
+|---|---|---|---|---|
+| OpenRouter | `https://openrouter.ai/api/v1` | `openrouter/free` | `Authorization: Bearer` | Verified against `openrouter.ai/docs/quickstart` and `openrouter.ai/docs/faq` (the FAQ documents the free-model router and its rate limits). |
+| SenseNova | `https://token.sensenova.cn/v1` | `sensenova-6.7-flash-lite` | `Authorization: Bearer` | Verified against the official `OpenSenseNova/SenseNova6.7` `API.md`: OpenAI-compatible `/chat/completions`, key from the SenseNova console. The free token plan is advertised on the platform; it is not a contractual guarantee. |
+| OmniRoute | deployment-specific | deployment-specific | `Authorization: Bearer` | OpenAI-compatible `POST /v1/chat/completions` is documented at `omniroute.online/api/`, but the host is self-hosted or supplied by Cheaper Inference. Shipped as a **custom** preset: enter your own URL and model ID. |
+| Custom | any `https://…` | any | `Authorization: Bearer` | Works with any gateway that implements the same request/response shape. |
 
-`MOCK_MODE = not bool(OPENROUTER_API_KEY)`. There is no separate flag, so an
-empty key is the supported way to guarantee no network call.
+Only the first two are hardcoded presets. There is no implied free tier for a
+custom provider.
 
-### Failure behaviour
+### Storage and masking
 
-| Caller | Behaviour on error |
-|---|---|
-| Vera | Catches the exception and returns `fallback_copy()` with `validation_error`; the item still reaches the copy stage with placeholder copy. |
-| Atlas | Does not catch. `approve_idea` returns HTTP `500`; the item stays at its current stage. |
+- `data/settings/providers.json` holds `id`, `name`, `base_url`, `model`,
+  `enabled`, `is_default`, the Fernet ciphertext in `api_key`, and
+  `api_key_last4` for display.
+- Keys are encrypted with `CONTENT_STUDIO_SECRET_KEY` (`cryptography`/Fernet).
+  If the variable is missing when the first provider is saved, the app generates
+  one and appends it to `.env` with a warning on stderr.
+- The API and the UI only ever expose a mask: `sk-or-...ab12` for OpenRouter,
+  `sk-...ab12` for SenseNova hosts, `...ab12` for anything else.
+- A missing or invalid secret key on **decrypt** raises a clear error instead of
+  silently minting a new key (which would make saved keys unreadable).
 
-Retry an Atlas failure by clicking Generate Ideas again. Fixing the key or
-network is the real remedy.
+### Mode and failure behaviour
+
+- The live path is used only when the **default** provider is `enabled` and has a
+  stored key. Otherwise generation is deterministic mock output and no network
+  call is made.
+- If the default provider fails, `core/llm.py` raises `LLMError`; the API returns
+  `502 {"error": "<sanitized message>"}` and the item is not advanced. There is
+  **no** silent switch to mock or to another provider.
+- Vera no longer swallows `LLMError` into `fallback_copy`; only parser/schema
+  errors still fall back. That keeps a provider outage visible on the item.
+- Retry from the UI after fixing the key/URL/model, or mark another provider as
+  the default.
+
+### Legacy variables
+
+`OPENROUTER_API_KEY` / `OPENROUTER_MODEL` / `MOCK_MODE` still exist in
+`config.py` so old `.env` files load without crashing, but `core/llm.py` ignores
+them. Delete them to avoid confusing the running mode.
 
 ### Mock routing
 
-When `MOCK_MODE` is true, `generate(prompt)` matches the prompt text, not a
-model:
+When no default provider is configured, `generate(prompt)` matches the prompt
+text, not a model:
 
 - Vera prompts contain `SELECTED FORMAT:` / `OUTPUT FORMAT - <FORMAT>`; the
   router reads the format name and returns that format's canned block from
@@ -174,21 +204,24 @@ editing the refusal away.
 | Action | Network call |
 |---|---|
 | Create an idea, select an idea, render, preview | None. |
-| Generate ideas / copy with a key set | OpenRouter. |
+| Generate ideas / copy with a default provider configured | That provider's `base_url` only. |
 | Render with `IMGBB_API_KEY` set | imgbb, once per image. |
 | Publish | None. Writes a local JSON file. |
-| Load the dashboard | None beyond the app's own origin. |
+| Load the dashboard or Settings | None beyond the app's own origin. |
 
 The CSP restricts `connect-src` and `img-src` to the app origin (plus `data:`),
-so the browser itself does not call OpenRouter or imgbb; only the Python process
-does.
+so the browser itself does not call the provider or imgbb; only the Python
+process does.
 
 ## Secrets
 
-- `OPENROUTER_API_KEY`, `IMGBB_API_KEY`, `CONTENT_STUDIO_TOKEN` come from `.env`
-  or the environment only.
-- `.env` is gitignored. No secret is logged; startup prints mode, publisher, and
-  debug state, not values.
+- Provider keys live encrypted in `data/settings/providers.json`; the Fernet key
+  is `CONTENT_STUDIO_SECRET_KEY` in `.env` or the environment.
+- `IMGBB_API_KEY` and `CONTENT_STUDIO_TOKEN` still come from `.env` or the
+  environment.
+- `.env` is gitignored, and so is `data/settings/`. No secret is logged; startup
+  prints mode, provider name, model, publisher, and debug state, never values.
 - Never put a token in `docs/`, tests, or committed config.
-- Rotate a key by changing `.env` and restarting the process; there is no hot
-  reload.
+- Rotate a provider key in Settings (leave the field blank to keep the current
+  one). Rotating `CONTENT_STUDIO_SECRET_KEY` makes every stored key unreadable:
+  re-enter each key after changing it.

@@ -3,34 +3,45 @@
 from PIL import Image
 
 import core.llm as llm
+import core.providers as providers
+import core.settings as settings_module
 import dashboard.app as app_module
 from dashboard.app import app
 
 
 class _FakeResponse:
-    def raise_for_status(self):
-        pass
+    status_code = 200
+    headers = {}
 
     def json(self):
         return {"choices": [{"message": {"content": "real-mode-response"}}]}
 
 
-def test_real_mode_calls_api_at_call_time(monkeypatch):
-    """Importing the module must not call OpenRouter; generate() must."""
-    monkeypatch.setattr(llm, "MOCK_MODE", False)
+def test_generate_uses_the_default_provider_at_call_time(
+    isolated_data, monkeypatch
+):
+    """Importing must not call out; generate() calls the configured provider."""
+    settings_module.add_provider({
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "openrouter/free",
+        "api_key": "sk-or-v1-test-key-ab12",
+    })
     calls = []
 
     def fake_post(url, **kwargs):
         calls.append((url, kwargs))
         return _FakeResponse()
 
-    monkeypatch.setattr(llm.requests, "post", fake_post)
+    monkeypatch.setattr(providers.requests, "post", fake_post)
 
     assert llm.generate("hello") == "real-mode-response"
     assert len(calls) == 1
     url, kwargs = calls[0]
     assert url == "https://openrouter.ai/api/v1/chat/completions"
+    assert kwargs["headers"]["Authorization"] == "Bearer sk-or-v1-test-key-ab12"
     assert kwargs["json"]["messages"][0]["content"] == "hello"
+    assert kwargs["json"]["model"] == "openrouter/free"
 
 
 def _fake_state(stage, ideas=None):

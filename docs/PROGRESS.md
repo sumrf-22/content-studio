@@ -779,3 +779,97 @@ None.
 None. No render or item file was regenerated, edited, or deleted, so no
 `data/_backup_<timestamp>/` was required for this task.
 
+## Post-audit Task 4 — BYOK provider settings (2026-10-29)
+
+**Status:** complete.
+
+### Baseline (recorded before changing)
+
+- `/settings` existed but was a placeholder with no provider form.
+- Text generation used `OPENROUTER_API_KEY` from `.env` and switched mode with
+  `MOCK_MODE = not bool(OPENROUTER_API_KEY)`. There was no way to add a second
+  provider, change the model in the UI, or test a key.
+- No provider file existed under `data/`, so there was nothing to migrate.
+
+### External verification (before coding)
+
+| Provider | Checked | Result |
+|---|---|---|
+| OpenRouter | `openrouter.ai/docs/quickstart`, `openrouter.ai/docs/faq` | `https://openrouter.ai/api/v1`, `POST /chat/completions`, Bearer auth; `openrouter/free` is the documented free router. Verified. |
+| SenseNova | official `OpenSenseNova/SenseNova6.7` `API.md` | `https://token.sensenova.cn/v1`, OpenAI-compatible `/chat/completions`, Bearer auth, `sensenova-6.7-flash-lite`; a free token plan is advertised. Verified endpoint/auth/model; the free plan is an offer, not a guarantee. |
+| OmniRoute | `omniroute.online/api/` | Documents an OpenAI-compatible `POST /v1/chat/completions`, but the base URL is self-hosted / Cheaper Inference. Not a single public endpoint → shipped as a custom preset requiring URL and model. |
+
+Details and links are in `docs/INTEGRATIONS.md`.
+
+### Changes
+
+- `core/settings.py` (new): `data/settings/providers.json` CRUD, Fernet
+  encrypt/decrypt with `CONTENT_STUDIO_SECRET_KEY`, auto-generated key appended
+  to `.env`, last-4-only plaintext, host-derived mask, URL/field validation,
+  default promotion, `mode_info()`.
+- `core/providers.py` (new): one OpenAI-compatible adapter
+  (`POST {base_url}/chat/completions`, Bearer), retries on 429/5xx with
+  exponential backoff and `Retry-After`, 120s pipeline timeout, 15s Test
+  timeout, sanitized `ProviderError`, `test_provider()`.
+- `core/llm.py`: settings-first generation, `LLMError`, mock fallback only when
+  no default provider exists; removed the direct OpenRouter call and the
+  `MOCK_MODE` branch.
+- `agents/vera.py`: re-raises `LLMError` instead of substituting
+  `fallback_copy` on provider failure.
+- `dashboard/app.py`: `/settings` mode context, `LLMError` → `502`,
+  `GET/POST /api/settings/providers`, `PUT/DELETE
+  /api/settings/providers/<id>`, `POST .../test`.
+- `templates/settings.html`: mode card, provider list with masked key, model,
+  status badges, Test/Edit/Delete/Set default, add/edit form with OpenRouter,
+  SenseNova, OmniRoute, and custom presets, URL hint.
+- `static/style.css`: settings/provider/badge/form styles, plus the Task 3
+  thumbnail crop remains.
+- `run.py`: prints the effective mode from the settings store.
+- `requirements.txt`: `cryptography==50.0.2`. `.gitignore`: `data/settings/`.
+- Tests:
+  - `tests/conftest.py`: removed the obsolete `MOCK_MODE` fixture; added the
+    autouse `isolate_provider_settings` (temp provider dir, temp `.env`, fixed
+    test key).
+  - `tests/test_settings.py` (45): Fernet round-trip, raw key absent from disk
+    and API, `sk-or-...ab12` mask, empty-key update preserves ciphertext,
+    auto-generated `.env` key, no rotation on decrypt, URL/field validation,
+    default/mode logic, CSRF on POST/PUT/DELETE and the test route, 502 on a
+    provider failure with the item untouched.
+  - `tests/test_providers.py` (15): local `ThreadingHTTPServer` proves the
+    request shape/Bearer header, 401, 429 retry then success, persistent 429
+    after three attempts, `Retry-After`, 5xx retry, timeout, malformed shape,
+    Test endpoint success/401, `LLMError` instead of mock fallback.
+  - `tests/e2e/conftest.py`: shared server fixture sets a fixed test-only
+    `CONTENT_STUDIO_SECRET_KEY`, so e2e never writes a real `.env`.
+  - `tests/e2e/test_ui_settings.py` (1): add from the OpenRouter preset →
+    masked key + live mode → edit keeps the key → delete → mock mode, with no
+    console/page/API errors.
+
+### Verification
+
+- `pytest -q`: `144 passed, 3 deselected in 251.41s`.
+- `pytest -m e2e`: `3 passed, 144 deselected in 32.79s`.
+- `tests/test_settings.py` alone: `45 passed`; `tests/test_providers.py`
+  alone: `15 passed`.
+- Screenshots: `tests/artifacts/e2e_settings_empty.png`,
+  `e2e_settings_provider.png`, `e2e_settings_deleted.png`.
+- Startup banner verified manually: `Mode = live LLM (<name>, <model>)` when a
+  default provider exists, `Mode = mock` otherwise.
+
+### Data changes
+
+None. No real provider was saved and no `.env` was created: every unit test
+uses a temporary settings directory and test key, and the e2e server points at a
+temporary data root with `CONTENT_STUDIO_SECRET_KEY` already set. The first real
+save will create `data/settings/providers.json` and, if needed, append the secret
+to `.env`; both are gitignored, and no `data/_backup_<timestamp>/` is involved
+because nothing existing is modified.
+
+### Blocked / unverified
+
+- OmniRoute has no single public base URL. It is available as a custom preset
+  with a "fill URL/model" note; it is not hardcoded.
+- The SenseNova free token plan is advertised on the platform but not asserted
+  as a contract. The endpoint, auth, and model are verified.
+
+

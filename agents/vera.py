@@ -3,7 +3,7 @@
 import re
 
 from core import models
-from core.llm import generate
+from core.llm import LLMError, generate
 
 
 SUPPORTED_FORMATS = list(models.SUPPORTED_FORMATS)
@@ -510,6 +510,10 @@ def run(topic, fmt="CAROUSEL"):
 
     try:
         raw = generate(prompt)
+    except LLMError:
+        # A configured provider failed. Bubble it up so the item shows a clear
+        # error instead of silently swapping in fallback copy.
+        raise
     except Exception as exc:
         return models.fallback_copy(fmt, topic, exc)
 

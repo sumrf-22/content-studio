@@ -87,6 +87,9 @@ def security_headers(response):
 from core.state import load, save, create_item, add_activity, locked
 from core.state import DATA as DATA_ROOT
 from core.models import SUPPORTED_FORMATS
+from core import settings as settings_store
+from core import providers as provider_adapter
+from core.llm import LLMError
 from agents.atlas import run as atlas
 from agents.vera import run as vera
 from agents.kite import run as kite
@@ -166,7 +169,72 @@ def index():
 
 @app.get("/settings")
 def settings_page():
-    return render_template("settings.html", active="settings")
+    try:
+        mode = settings_store.mode_info()
+    except settings_store.SettingsError as exc:
+        mode = {"mode": "error", "reason": str(exc)}
+    return render_template("settings.html", active="settings", mode=mode)
+
+
+@app.errorhandler(LLMError)
+def handle_llm_error(exc):
+    """A provider failure is a clear 502; the item is left untouched."""
+    return jsonify({"error": str(exc)}), 502
+
+
+@app.get("/api/settings/providers")
+def list_providers():
+    try:
+        return jsonify({
+            "providers": settings_store.list_providers(),
+            "mode": settings_store.mode_info(),
+        })
+    except settings_store.SettingsError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/settings/providers")
+def add_provider():
+    payload = request.get_json(silent=True) or {}
+    try:
+        provider = settings_store.add_provider(payload)
+    except settings_store.SettingsError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(provider), 201
+
+
+@app.put("/api/settings/providers/<provider_id>")
+def update_provider(provider_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        provider = settings_store.update_provider(provider_id, payload)
+    except settings_store.SettingsError as exc:
+        status = 404 if str(exc) == "provider not found" else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(provider)
+
+
+@app.delete("/api/settings/providers/<provider_id>")
+def delete_provider(provider_id):
+    try:
+        result = settings_store.delete_provider(provider_id)
+    except settings_store.SettingsError as exc:
+        status = 404 if str(exc) == "provider not found" else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(result)
+
+
+@app.post("/api/settings/providers/<provider_id>/test")
+def test_provider(provider_id):
+    try:
+        provider = settings_store.get_provider(provider_id)
+    except settings_store.SettingsError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+
+    try:
+        return jsonify(provider_adapter.test_provider(provider))
+    except provider_adapter.ProviderError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
 
 
 @app.get("/content-studio")

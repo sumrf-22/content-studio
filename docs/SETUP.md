@@ -31,6 +31,7 @@ tests and docs live in `D:\content_studio\content_studio`.
 | flask | 3.1.3 | Installed and verified in the baseline venv |
 | requests | 2.34.2 | Installed and verified in the baseline venv |
 | Pillow | 12.3.0 | Installed and verified in the baseline venv |
+| cryptography | 50.0.2 | Added in the Task 4 BYOK work; Fernet key encryption |
 | pytest | 9.2.0 | Added in Phase 0; requires Python >= 3.10 |
 | playwright | 1.64.1 | Added in Phase 5 for the browser e2e suite |
 
@@ -78,8 +79,30 @@ Without an OpenRouter key the app runs in mock mode. At baseline there was no
 | `CONTENT_STUDIO_TOKEN` | unset | Shared secret required for non-localhost access. |
 | `CONTENT_STUDIO_DATA_DIR` | `<project>/data` | Overrides the state, render, and publish root. Must be set before start. |
 | `CONTENT_STUDIO_PUBLISHER` | `mock` | `mock` saves a local package; any other value is refused. |
-| `OPENROUTER_API_KEY` | unset | Empty means mock mode. |
-| `OPENROUTER_MODEL` | `openrouter/free` | Free routing only. |
+| `CONTENT_STUDIO_SECRET_KEY` | generated on first save | Fernet key for provider API keys. Never log or commit it. |
+| `OPENROUTER_API_KEY` | unset | Legacy; ignored by generation since Task 4. |
+| `OPENROUTER_MODEL` | `openrouter/free` | Legacy; ignored by generation since Task 4. |
+
+### Model providers (BYOK)
+
+Open <http://127.0.0.1:8080/settings>. With no provider saved, the page says
+**Mock mode** and generation is deterministic.
+
+1. Pick a preset (OpenRouter, SenseNova, or a custom/self-hosted OmniRoute URL).
+2. Paste the provider key and save. The first provider becomes the default and
+   the page switches to **Live — <name>**.
+3. Use **Test** to send one real completion. The result is shown as an alert.
+
+Keys are stored encrypted in `data/settings/providers.json`. If
+`CONTENT_STUDIO_SECRET_KEY` is not set, the first save generates one and appends
+it to `.env` (a warning is printed to stderr). Keep that file; losing the key
+makes every stored provider key unreadable.
+
+`python run.py` prints the effective mode at startup, for example:
+
+```
+Mode         = live LLM (OpenRouter, openrouter/free)
+```
 
 Example for a trusted LAN, with debug still off:
 
@@ -118,10 +141,12 @@ Browser end-to-end suite:
 .\.venv\Scripts\python.exe -m pytest -m e2e
 ```
 
-Current results: `83 passed, 1 deselected` for the fast suite and `1 passed, 83
+Current results: `144 passed, 3 deselected` for the fast suite and `3 passed, 144
 deselected` for e2e. The e2e run starts a real `run.py` on a free port against a
 temporary data directory and writes screenshots plus `e2e_server.log` to
-`tests/artifacts/` (gitignored). The operator's `data/` is never touched.
+`tests/artifacts/` (gitignored). The operator's `data/` is never touched, and the
+e2e server uses a fixed test-only `CONTENT_STUDIO_SECRET_KEY` so it never writes a
+real `.env` entry.
 
 `pytest.ini` sets `pythonpath = .` so tests can import `dashboard.app` from the
 project root, and `addopts = -m "not e2e"` keeps the default run browser-free.

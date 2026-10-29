@@ -269,3 +269,112 @@ ship untestable network code and credential handling.
 the Graph client, add credential validation, extend `SUPPORTED_PUBLISHERS`, and
 give the API a publish-status that distinguishes local from remote. Until then
 `published_local` is the only terminal status.
+
+## D-022 — Provider selection comes from `data/settings/providers.json`, not env
+
+**Decision:** The live LLM path reads the default enabled provider from
+`<data>/settings/providers.json`. `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and
+`MOCK_MODE` remain in `config.py` for backwards-compatible loading but are
+ignored by generation.
+
+**Why:** Two sources of truth would make the Settings page lie: a saved provider
+could be silently overridden by a leftover env key, and removing a provider would
+not necessarily leave live mode. One store keeps the UI, the startup banner, and
+the actual request consistent.
+
+**Consequence:** A user upgrading with an old `.env` stays in mock mode until
+they add a provider in Settings. `docs/INTEGRATIONS.md` calls the legacy
+variables out explicitly.
+
+## D-023 — Every provider uses one OpenAI-compatible adapter
+
+**Decision:** `core/providers.py` sends `POST {base_url}/chat/completions` with
+`Authorization: Bearer <key>` for OpenRouter, SenseNova, OmniRoute, and custom
+gateways. There is no per-provider SDK or request shape.
+
+**Why:** All three verified providers document the OpenAI wire format. One
+adapter means one retry policy, one error vocabulary, one sanitizer, and one set
+of tests (D-024). An SDK would add dependencies and per-provider drift for no
+capability the app uses.
+
+**Consequence:** A provider that is not OpenAI-compatible cannot be added without
+a new adapter branch. The four presets in the UI are conveniences that pre-fill
+URL/model, not separate code paths.
+
+## D-024 — Retry 429/5xx with bounded backoff; never retry auth errors
+
+**Decision:** The adapter retries `429`, `500`, `502`, `503`, and `504` up to
+three attempts with exponential backoff (`Retry-After` honoured, capped at 5
+seconds). `401`, `403`, `404`, timeouts, and malformed responses fail immediately
+with a sanitized `ProviderError`.
+
+**Why:** Rate limits and transient 5xx are worth one more request. Retrying a bad
+key or a bad URL only multiplies failures and delays the operator's feedback.
+Timeouts are surfaced rather than retried because a second 120-second request is
+worse than telling the operator.
+
+**Consequence:** The Settings **Test** button uses two attempts and 15 seconds.
+`tests/test_providers.py` drives a local HTTP server to prove retry counts,
+`Retry-After` handling, and the timeout path.
+
+## D-025 — Provider keys are Fernet-encrypted with an auto-generated secret
+
+**Decision:** Keys are encrypted with `cryptography`'s Fernet using
+`CONTENT_STUDIO_SECRET_KEY`. On the first save, if the variable is absent, the
+app generates a key, appends it to `.env`, and sets it in the process
+environment. Only `api_key_last4` is stored in plain text. A missing or invalid
+key during decryption raises `SettingsError`; it never rotates silently.
+
+**Why:** The requirement is that the raw key is never in JSON or the API.
+Plaintext storage would leak the key with any backup or support bundle. Silent
+rotation would turn "key missing" into "all saved providers are broken" with no
+explanation.
+
+**Consequence:** `.env` becomes a required local file once a provider exists, and
+`data/settings/` is gitignored. Losing `CONTENT_STUDIO_SECRET_KEY` means
+re-entering every provider key. `tests/test_settings.py` asserts the round-trip,
+the absence of the raw key, and the no-rotation failure.
+
+## D-026 — Provider mask derives the prefix from the host
+
+**Decision:** The UI shows `sk-or-...<last4>` for `openrouter.ai`,
+`sk-...<last4>` for `*.sensenova.cn`, and `...<last4>` for any other host. Only
+the last four characters are stored.
+
+**Why:** The requirement asks for a hint shaped like `sk-or-...ab12`. Storing a
+provider-specific prefix would add another plaintext fragment; deriving it from
+the base URL keeps the file minimal and still produces the expected string.
+
+**Consequence:** Changing a provider's base URL changes the displayed prefix. The
+mask is a display hint, not a validator; the only proof of a working key is the
+**Test** button.
+
+## D-027 — OmniRoute is a custom preset; SenseNova is a fixed preset
+
+**Decision:** OpenRouter and SenseNova ship with verified base URLs and model
+IDs. OmniRoute ships as a preset that leaves the URL and model blank with a note,
+because its endpoint is self-hosted or supplied by Cheaper Inference.
+
+**Why:** Hardcoding a deployment-specific host would send keys to the wrong
+place. The verification pass on 2026-10-29 found OmniRoute documents the
+OpenAI-compatible `/v1/chat/completions` shape but no single public base URL, so
+the safe choice is to make the operator fill it in.
+
+**Consequence:** Selecting OmniRoute does not change the request shape; it only
+shows the guidance note. `docs/INTEGRATIONS.md` records which endpoints are
+verified and which are not.
+
+## D-028 — A provider failure is a 502, never a silent mock fallback
+
+**Decision:** `core/llm.py` raises `LLMError` when the default provider fails.
+`dashboard/app.py` maps it to `502 {"error": "<sanitized message>"}`. Vera
+re-raises `LLMError` instead of substituting `fallback_copy`. With no provider
+configured, generation stays in deterministic mock mode.
+
+**Why:** A silent switch hides an outage and produces content the operator
+believes was model-written. The requirement is explicit: a default-provider
+failure must show a clear item error and must not switch providers.
+
+**Consequence:** Parser/schema problems still fall back to `fallback_copy()`
+(unchanged), but transport/auth/rate-limit failures reach the UI. The item is not
+advanced and can be retried after fixing Settings.

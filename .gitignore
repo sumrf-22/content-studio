@@ -10,6 +10,7 @@ data/state.json
 data/.state-*.tmp
 data/renders/
 data/published/
+data/settings/
 data/_backup_*/
 tests/artifacts/
 

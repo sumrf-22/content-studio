@@ -20,6 +20,7 @@ DEBUG = os.getenv("CONTENT_STUDIO_DEBUG", "").strip().lower() in {
 
 from config import ACCESS_TOKEN, PUBLISHER  # noqa: E402  (loads .env first)
 from dashboard.app import app  # noqa: E402
+from core import settings as settings_store  # noqa: E402
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -44,7 +45,20 @@ def main():
 
     print("Template dir = {0}".format(TEMPLATE_DIR))
     print("Static dir   = {0}".format(STATIC_DIR))
-    print("Mode         = {0}".format("mock" if app.config.get("MOCK_MODE") else "live LLM"))
+    try:
+        provider_mode = settings_store.mode_info()
+    except settings_store.SettingsError as exc:
+        provider_mode = {"mode": "error", "reason": str(exc)}
+    if provider_mode.get("mode") == "live":
+        print(
+            "Mode         = live LLM ({0}, {1})".format(
+                provider_mode.get("provider"), provider_mode.get("model")
+            )
+        )
+    elif provider_mode.get("mode") == "error":
+        print("Mode         = settings error: {0}".format(provider_mode.get("reason")))
+    else:
+        print("Mode         = mock")
     print("Publisher    = {0}".format(PUBLISHER))
     print("Debug        = {0}".format(DEBUG))
 

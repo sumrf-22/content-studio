@@ -90,6 +90,11 @@ Covered by `tests/test_security.py`:
   exactly (case-insensitive exact match as a fallback), and the selected format
   is validated against `SUPPORTED_FORMATS`.
 - Kite render failures return `400` instead of storing an empty design.
+- `POST/PUT /api/settings/providers`: `name`, `base_url`, `model`, and (on
+  create) `api_key` are required; `base_url` must be `https://` except on
+  localhost, with no credentials/query/fragment; names must be unique
+  (case-insensitive); keys are capped at 4096 characters; unknown fields are
+  ignored.
 
 ### 5. Response headers
 
@@ -111,11 +116,25 @@ blocked.
 
 ### 6. Secrets
 
-- API keys come from `.env` or the environment only; nothing is hardcoded.
-- `.env` is gitignored.
-- `data/` runtime files and backups are gitignored.
-- No secret is logged. Startup prints the bind address, mode, and debug flag
-  only.
+- Model-provider keys are entered in Settings and encrypted at rest with Fernet
+  under `data/settings/providers.json`. The encryption key is
+  `CONTENT_STUDIO_SECRET_KEY`.
+- If the key is missing when the first provider is saved, `core/settings.py`
+  generates one and appends `CONTENT_STUDIO_SECRET_KEY=<key>` to `.env`, then
+  sets it in the process environment. Startup prints a warning, never the key.
+- If the key is missing or invalid when a saved key must be decrypted, the app
+  raises a clear `SettingsError`. It never mints a replacement key, because that
+  would silently destroy access to every stored key.
+- Only `api_key_last4` is stored in plain text, for the mask
+  (`sk-or-...ab12`). The raw key is never written to `providers.json`, returned
+  by the API, rendered into the page, or included in an error message.
+- Provider errors are sanitized: if upstream text contains the key it is replaced
+  with `[redacted]`, whitespace-collapsed, and truncated to 300 characters.
+- `data/settings/` is gitignored, like the rest of `data/`.
+- `.env` is gitignored. No secret is logged. Startup prints the bind address,
+  mode, provider name, model, publisher, and debug flag only.
+- `IMGBB_API_KEY` and `CONTENT_STUDIO_TOKEN` still come from `.env` or the
+  environment.
 
 ## Known limitations
 
@@ -144,8 +163,9 @@ tokens or `data/state.json` contents.
 ## Verification
 
 ```
-.\.venv\Scripts\python.exe -m pytest tests\test_security.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_security.py tests\test_settings.py tests\test_providers.py -q
 ```
 
-Expected: `16 passed`. The full suite is `83 passed, 1 deselected` after Phase
-6, plus the browser suite with `pytest -m e2e`.
+Expected: `60 passed` for the settings/provider files plus `16 passed` for
+`test_security.py`. The full fast suite is `144 passed, 3 deselected`, and the
+browser suite (`pytest -m e2e`) is `3 passed`.
