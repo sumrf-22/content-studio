@@ -437,7 +437,7 @@
                     else if (stage === 'idea_review') primary = btn('approve_idea', 'Generate Ideas', 'approve-btn');
                     else if (stage === 'copy') primary = btn('approve_copy', 'Approve Copy', 'approve-btn');
                     else if (stage === 'design') primary = btn('approve_design', 'Approve Design', 'approve-btn');
-                    else if (stage === 'publish') primary = btn('publish', 'Publish', 'approve-btn');
+                    else if (stage === 'publish') primary = btn('publish', 'Publish locally', 'approve-btn');
 
                     const canReject = ['idea', 'idea_review', 'copy', 'design'].includes(stage);
                     const reject = canReject ? btn('reject', 'Reject', 'reject-btn') : '';
@@ -482,7 +482,7 @@
                             body +
                             '</div>';
                     } else if (stage === 'publish') {
-                        preview = '<div class="preview-stage"><div class="empty">Ready for final publish approval.</div></div>';
+                        preview = '<div class="preview-stage"><div class="empty">Ready for final approval. The mock publisher saves a local package under data/published/; it does not call Instagram.</div></div>';
                     } else if (stage === 'done') {
                         preview = '<div class="preview-stage"><div class="empty">Published.</div></div>';
                     }

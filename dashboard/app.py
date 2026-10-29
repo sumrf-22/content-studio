@@ -90,7 +90,7 @@ from core.models import SUPPORTED_FORMATS
 from agents.atlas import run as atlas
 from agents.vera import run as vera
 from agents.kite import run as kite
-from agents.orin import run as orin
+from agents.orin import run as orin, PublishError
 
 MAX_TOPIC_LENGTH = 300
 
@@ -336,16 +336,21 @@ def _handle_action(item_id):
     elif action == "publish":
 
         # Write the published snapshot only after the item reaches its final
-        # state, so the snapshot is not a stale pre-publish copy.
+        # state, so the snapshot is not a stale pre-publish copy. If the
+        # configured publisher is not available, refuse before saving anything.
         item["published"] = True
         item["stage"] = "done"
         item["status"] = "published_local"
 
-        orin(item)
+        try:
+            result = orin(item)
+        except PublishError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         add_activity(
             s,
-            "Item " + str(item_id) + " saved as local publish package"
+            "Item " + str(item_id) + " saved as local publish package "
+            "(publisher: " + str(result.get("mode")) + ")"
         )
 
 

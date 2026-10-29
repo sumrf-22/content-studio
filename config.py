@@ -43,3 +43,8 @@ IMGBB_API_KEY = os.getenv("IMGBB_API_KEY", "")
 # without it.
 ACCESS_TOKEN = os.getenv("CONTENT_STUDIO_TOKEN", "").strip()
 
+# Publishing target. Only "mock" is implemented: it writes a local package into
+# `<data>/published/`. Any other value is refused at publish time until the
+# Instagram account and Meta app are confirmed and a real integration exists.
+PUBLISHER = (os.getenv("CONTENT_STUDIO_PUBLISHER", "mock") or "mock").strip().lower()
+

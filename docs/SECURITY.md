@@ -129,6 +129,9 @@ blocked.
   deployment needs a WSGI server (waitress/gunicorn) in front of
   `dashboard.app:app`.
 - **Publishing is mock.** No Instagram/Meta credentials are used or stored.
+  `CONTENT_STUDIO_PUBLISHER` accepts only `mock`, which writes a local JSON
+  package to `data/published/`; any other value makes the publish action return
+  `400` and leaves the item unpublished.
 - **No upload surface.** The app never accepts file uploads, so there is no
   upload-sized denial-of-service path.
 
@@ -144,4 +147,5 @@ tokens or `data/state.json` contents.
 .\.venv\Scripts\python.exe -m pytest tests\test_security.py -q
 ```
 
-Expected: `16 passed`. The full suite is `48 passed` after Phase 4.
+Expected: `16 passed`. The full suite is `83 passed, 1 deselected` after Phase
+6, plus the browser suite with `pytest -m e2e`.

@@ -500,3 +500,69 @@ server log and screenshots live in the gitignored `tests/artifacts/`.
 ### Next steps
 - Phase 6: make the mock publisher the explicit default and refuse real Meta
   Graph publishing until an account/app is confirmed.
+
+## Phase 6 — Publisher safety (2026-10-29)
+
+**Status:** complete.
+
+### Findings before the change (commit `7ba12ce`)
+
+1. **No publisher abstraction.** `agents/orin.py` unconditionally wrote
+   `data/published/item_<id>.json` and returned
+   `"Saved locally (publishing is intentionally disabled in v1)."`. The API
+   ignored that return value, set `published=true`, and reported
+   `published_local`. There was no configuration switch, so a future integration
+   had nowhere to plug in and no way to distinguish a local package from a real
+   publish.
+2. **No refusal path.** `grep -ri "graph.facebook\|instagram.*api\|meta.*token"`
+   found nothing, and `config.py` had no publishing setting. Adding a real
+   integration would have silently changed the meaning of the Publish button.
+3. **The UI overstated the action.** The final-stage button said `Publish` and
+   the stage preview only said "Ready for final publish approval", with no hint
+   that the step is local-only.
+
+### Changes
+
+- `config.py`: `PUBLISHER` from `CONTENT_STUDIO_PUBLISHER`, default `mock`,
+  normalised to lowercase.
+- `agents/orin.py`: `SUPPORTED_PUBLISHERS = {"mock"}`, `PublishError`,
+  `describe()` returning `{"mode": "mock", "target": "local", "message": ...}`,
+  and `run()` that refuses unknown modes before writing anything. The publish
+  metadata is attached to the item before the snapshot is written.
+- `dashboard/app.py`: the publish branch catches `PublishError` and returns
+  `400` without saving, so the item stays at the `publish` stage with
+  `published=false`. Successful activity logs now name the publisher.
+- `templates/index.html`: final button reads `Publish locally`; the stage
+  preview states that the mock publisher writes under `data/published/` and does
+  not call Instagram.
+- `run.py`: startup prints `Publisher = <mode>`.
+- `tests/test_publisher.py` (new, 7 tests): default mode, mock package contents,
+  refusal for `instagram`/`meta`/`graph`/`live`, no stage change, no snapshot,
+  no activity entry on refusal.
+- `tests/test_api.py` and `tests/e2e/test_ui_pipeline.py`: assert the stored
+  publish metadata and the snapshot both record `mode=mock`.
+
+### Verification
+
+- Default (`CONTENT_STUDIO_PUBLISHER` unset): publish returns 200,
+  `item.publish = {"mode": "mock", "target": "local", ...}`, the snapshot is
+  written, and the activity log says `publisher: mock`.
+- `CONTENT_STUDIO_PUBLISHER=instagram` (or any non-mock value): publish returns
+  `400` with
+  `publisher 'instagram' is not available: real Meta Graph publishing is disabled until the Instagram account and Meta app are confirmed.`
+  The item remains at `publish`, `published=false`, no snapshot file is created,
+  and no activity entry is added.
+- `pytest -q`: `83 passed, 1 deselected in 212.25s`.
+- `pytest -m e2e`: `1 passed, 83 deselected in 21.27s`.
+
+### Data changes
+
+None. The publisher tests use the `isolated_data` fixture, and the browser e2e
+uses a temporary data directory.
+
+### Blockers
+- None. Real Instagram publishing remains intentionally unimplemented.
+
+### Next steps
+- Phase 7: architecture, API, data, testing, integration, and audit docs; then a
+  fresh-clone acceptance run.

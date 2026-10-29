@@ -251,3 +251,21 @@ fix.
 **Consequence:** Previously published items keep their 1350-tall assets; only
 new renders are vertical. Any downstream step that assumed 1080×1350 for REEL
 must read the actual image size.
+
+## D-021 — `mock` is the only publisher; everything else is refused
+
+**Decision:** `CONTENT_STUDIO_PUBLISHER` defaults to `mock`, and
+`agents/orin.py` supports only that value. It writes a local JSON package to
+`<data>/published/` and records `{"mode": "mock", "target": "local"}` on the
+item. Any other value makes the publish action return `400` and leaves the item
+unpublished.
+
+**Why:** There is no Meta Graph integration, no confirmed Instagram account, and
+no app credentials. A quiet fallback would let the UI claim a publish that never
+happened, and building the integration before the account is confirmed would
+ship untestable network code and credential handling.
+
+**Consequence:** Enabling real publishing is a deliberate code change: implement
+the Graph client, add credential validation, extend `SUPPORTED_PUBLISHERS`, and
+give the API a publish-status that distinguishes local from remote. Until then
+`published_local` is the only terminal status.

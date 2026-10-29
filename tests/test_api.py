@@ -88,6 +88,8 @@ def test_full_pipeline_reaches_published_local(client, isolated_data):
     assert published["stage"] == "done"
     assert published["status"] == "published_local"
     assert published["published"] is True
+    assert published["publish"]["mode"] == "mock"
+    assert published["publish"]["target"] == "local"
 
     snapshot = json.loads(
         (isolated_data / "published" / f"item_{item_id}.json").read_text(
@@ -97,6 +99,7 @@ def test_full_pipeline_reaches_published_local(client, isolated_data):
     assert snapshot["stage"] == "done"
     assert snapshot["status"] == "published_local"
     assert snapshot["published"] is True
+    assert snapshot["publish"]["mode"] == "mock"
     assert snapshot["design"]["slides"]
 
     state = client.get("/api/state").get_json()

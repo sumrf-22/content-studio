@@ -18,7 +18,7 @@ DEBUG = os.getenv("CONTENT_STUDIO_DEBUG", "").strip().lower() in {
     "1", "true", "yes", "on",
 }
 
-from config import ACCESS_TOKEN  # noqa: E402  (loads .env first)
+from config import ACCESS_TOKEN, PUBLISHER  # noqa: E402  (loads .env first)
 from dashboard.app import app  # noqa: E402
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
@@ -45,6 +45,7 @@ def main():
     print("Template dir = {0}".format(TEMPLATE_DIR))
     print("Static dir   = {0}".format(STATIC_DIR))
     print("Mode         = {0}".format("mock" if app.config.get("MOCK_MODE") else "live LLM"))
+    print("Publisher    = {0}".format(PUBLISHER))
     print("Debug        = {0}".format(DEBUG))
 
     app.run(host=HOST, port=PORT, debug=DEBUG, use_reloader=DEBUG)

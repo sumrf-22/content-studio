@@ -10,6 +10,7 @@ Run with::
     pytest -m e2e
 """
 
+import json
 import os
 import socket
 import subprocess
@@ -167,7 +168,14 @@ def _run_pipeline(page, server, topic, idea_index, expected_format, expected_siz
     assert item["status"] == "published_local"
     assert item["published"] is True
     assert item["format"] == expected_format
-    assert (server.data / "published" / f"item_{item_id}.json").is_file()
+    assert item["publish"]["mode"] == "mock"
+    snapshot = json.loads(
+        (server.data / "published" / f"item_{item_id}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert snapshot["publish"]["mode"] == "mock"
+    assert snapshot["stage"] == "done"
     return item
 
 

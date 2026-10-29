@@ -77,6 +77,7 @@ Without an OpenRouter key the app runs in mock mode. At baseline there was no
 | `CONTENT_STUDIO_DEBUG` | off | Enables the reloader and the Werkzeug debugger. |
 | `CONTENT_STUDIO_TOKEN` | unset | Shared secret required for non-localhost access. |
 | `CONTENT_STUDIO_DATA_DIR` | `<project>/data` | Overrides the state, render, and publish root. Must be set before start. |
+| `CONTENT_STUDIO_PUBLISHER` | `mock` | `mock` saves a local package; any other value is refused. |
 | `OPENROUTER_API_KEY` | unset | Empty means mock mode. |
 | `OPENROUTER_MODEL` | `openrouter/free` | Free routing only. |
 
