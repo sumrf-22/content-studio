@@ -646,3 +646,39 @@ to the temporary clone and its pytest temp directories.
 
 ### Next steps
 - None. The audit plan (phases 0–7) is complete.
+
+## Post-audit Task 1 — "View All" label (2026-10-29)
+
+**Status:** complete.
+
+### Reproduction (recorded before fixing)
+
+1. Started `run.py` (mock mode) and opened `http://127.0.0.1:8080/`.
+2. Read `#recent-toggle`: before the click, `textContent` was `View All ▼`
+   (`innerHTML` = `View All <span>▼</span>`).
+3. Clicked `#recent-toggle`. `#more-recent` gained the `open` class, but the
+   span's text became the literal string `&#x25B4; Hide`; `innerHTML` was
+   `View All <span>&amp;#x25B4; Hide</span>` and the arrow disappeared.
+4. Cause: `templates/index.html` assigns the label with
+   `span.textContent = ... ? '&#x25B4; Hide' : 'View All &#x25BC;'`.
+   `textContent` does not decode HTML entities, so the entity is stored as
+   text.
+
+### Changes
+
+- `templates/index.html`: the toggle now writes the characters `▴ Hide` /
+  `View All ▾` through `textContent` instead of `&#x25B4;` / `&#x25BC;`.
+- `tests/e2e/test_ui_pipeline.py`: `_assert_recent_toggle_label()` clicks the
+  toggle both ways and asserts the label contains the real arrow characters and
+  no `&#`.
+
+### Verification
+
+- `pytest -q`: `83 passed, 1 deselected in 223.15s`.
+- `pytest -m e2e`: `1 passed, 83 deselected in 21.60s`.
+- Browser re-check after the fix: expanded label `▴ Hide`, collapsed label
+  `View All ▾`, no literal entity text.
+
+### Data changes
+
+None.

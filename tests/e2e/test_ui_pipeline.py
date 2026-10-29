@@ -179,6 +179,24 @@ def _run_pipeline(page, server, topic, idea_index, expected_format, expected_siz
     return item
 
 
+def _assert_recent_toggle_label(page):
+    """The toggle must render arrows as characters, never as HTML entities."""
+    page.evaluate(
+        "document.getElementById('recent-toggle').style.display = 'block'"
+    )
+    toggle = page.locator("#recent-toggle")
+
+    toggle.click()
+    expanded = toggle.inner_text()
+    assert "&#" not in expanded, expanded
+    assert "▴" in expanded and "Hide" in expanded, expanded
+
+    toggle.click()
+    collapsed = toggle.inner_text()
+    assert "&#" not in collapsed, collapsed
+    assert "▾" in collapsed and "View All" in collapsed, collapsed
+
+
 def test_ui_pipeline_publishes_two_formats_without_errors(server):
     console_errors = []
     page_errors = []
@@ -208,6 +226,7 @@ def test_ui_pipeline_publishes_two_formats_without_errors(server):
 
         page.goto(server.base_url + "/")
         expect(page.locator("#create-topic")).to_be_visible()
+        _assert_recent_toggle_label(page)
 
         carousel = _run_pipeline(
             page, server, "E2E carousel topic", 0, "CAROUSEL", (1080, 1350)
