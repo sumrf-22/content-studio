@@ -19,6 +19,19 @@ from agents.kite import run as kite
 from agents.orin import run as orin
 
 
+# Single action vocabulary shared with templates/index.html.
+# The UI sends exactly these names and the server accepts an action only
+# at the stages listed here.
+STAGE_ACTIONS = {
+    "idea": {"approve_idea", "reject"},
+    "idea_review": {"select_idea", "approve_idea", "reject"},
+    "copy": {"approve_copy", "reject"},
+    "design": {"approve_design", "reject"},
+    "publish": {"publish"},
+    "done": set(),
+}
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -89,7 +102,8 @@ def idea():
 
 @app.post("/api/action/<int:item_id>")
 def action(item_id):
-    action = request.json.get("action")
+    payload = request.get_json(silent=True) or {}
+    action = payload.get("action")
 
     s = load()
 
@@ -100,6 +114,12 @@ def action(item_id):
 
     if not item:
         return jsonify({"error": "not found"}), 404
+
+    stage = item.get("stage", "idea")
+    if action not in STAGE_ACTIONS.get(stage, set()):
+        return jsonify({
+            "error": "action %r is not allowed at stage %r" % (action, stage)
+        }), 400
 
 
     # ---------------------------------------------------------
@@ -123,7 +143,7 @@ def action(item_id):
     # ---------------------------------------------------------
     elif action == "select_idea":
 
-        selected = request.json.get("selected_idea", "").strip()
+        selected = (payload.get("selected_idea") or "").strip()
 
         if not selected:
             return jsonify({"error": "idea required"}), 400
@@ -217,7 +237,7 @@ def action(item_id):
         fmt = item.get("format")
         selected_idea = item.get("selected_idea")
 
-        if stage == "idea":
+        if stage in ("idea", "idea_review"):
             ideas = atlas(topic)
             item["ideas"] = ideas
             add_activity(s, f"Atlas regenerated 5 ideas for item {item_id}")

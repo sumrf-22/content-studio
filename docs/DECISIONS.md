@@ -65,3 +65,32 @@ instructed.
 
 **Why:** Phase 1 fixes are UI-critical and must not be bundled with a storage
 refactor.
+
+## D-008 — One stage-aware action vocabulary
+
+**Decision:** Use exactly six action names in both the browser and the server:
+`approve_idea`, `select_idea`, `approve_copy`, `approve_design`, `publish`, and
+`reject`. `dashboard/app.py` holds `STAGE_ACTIONS`; an action is accepted only at
+the listed stages.
+
+**Why:** The UI previously generated `approve_<stage>`, producing names such as
+`approve_idea_review` that the server rejected with 400. A single explicit map
+removes the mismatch and returns a descriptive error for stale or invalid
+actions.
+
+**Consequence:** `approve_idea` is also allowed at `idea_review` when an item
+has no ideas, so a previously stuck item can be regenerated. `select_idea`
+requires `selected_idea` and moves the item from `idea_review` to `copy`.
+
+## D-009 — Mock Atlas has a generic fallback
+
+**Decision:** If a topic matches none of the canned mock branches, Atlas returns
+three generic ideas (CAROUSEL, SINGLE_IMAGE, TEXT_POST) derived from the topic
+line.
+
+**Why:** During acceptance, item 4 ("Easy morning routines for energy") matched
+no mock branch and returned zero ideas, leaving the UI at "No ideas generated"
+with no way forward. The fallback keeps any fresh topic usable in mock mode.
+
+**Consequence:** Mock ideas are generic for unmatched topics. Real LLM mode is
+unaffected.

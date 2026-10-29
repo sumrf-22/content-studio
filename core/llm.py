@@ -3,7 +3,31 @@ import json
 from config import OPENROUTER_API_KEY, OPENROUTER_MODEL, MOCK_MODE
 
 
+def _real_generate(prompt):
+    """Call OpenRouter's chat-completions endpoint and return the text."""
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": OPENROUTER_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        timeout=120,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload["choices"][0]["message"]["content"]
+
+
 def generate(prompt):
+    # Real API mode only when a key is configured; MOCK_MODE is False only
+    # when OPENROUTER_API_KEY is set (see config.py).
+    if not MOCK_MODE:
+        return _real_generate(prompt)
+
     p = prompt.lower()
 
     # --- Vera vs Atlas routing ---
@@ -149,23 +173,38 @@ def generate(prompt):
             },
         ])
 
-    return "[]"
+    # Generic fallback so any new topic can still move through the pipeline
+    # in mock mode instead of producing zero ideas.
+    topic = "your topic"
+    lines = prompt.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().lower() == "topic:" and index + 1 < len(lines):
+            candidate = lines[index + 1].strip()
+            if candidate:
+                topic = candidate
+            break
 
-
-if not MOCK_MODE:
-    r = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
+    short = topic[:50].rstrip(" .")
+    return json.dumps([
+        {
+            "title": f"5 Practical Tips for {short}",
+            "problem": "People want a simple starting point.",
+            "angle": "Break the topic into five small, actionable steps.",
+            "format": "CAROUSEL",
+            "format_reason": "Best because the topic works as a short list of tips.",
         },
-        json={
-            "model": OPENROUTER_MODEL,
-            "messages": [{"role": "user", "content": prompt}]
+        {
+            "title": f"The One Rule That Matters for {short}",
+            "problem": "Too many options make it hard to begin.",
+            "angle": "Focus on the single highest-impact change.",
+            "format": "SINGLE_IMAGE",
+            "format_reason": "Best because one strong rule fits a single image.",
         },
-        timeout=120
-    )
-    r.raise_for_status()
-    resp = r.json()
-    content = resp["choices"][0]["message"]["content"]
-    generate = lambda _: content
+        {
+            "title": f"A Simple Daily Routine for {short}",
+            "problem": "Consistency is harder than knowing what to do.",
+            "angle": "Turn the advice into a repeatable daily habit.",
+            "format": "TEXT_POST",
+            "format_reason": "Best because a routine reads well as a text post.",
+        },
+    ])

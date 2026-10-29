@@ -187,7 +187,7 @@ def _render_slide(slide, index, output_path):
     draw = ImageDraw.Draw(img)
 
     # Dark readability panel
-    panel = (55, 70, 85, 1110)
+    panel = (55, 70, 1025, 1110)
 
     overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)

@@ -150,8 +150,8 @@
                     <h2>&#x1F504; Approval Queue</h2>
                     <div class="approval-list" id="approval-list">
                         <!-- Dynamic items rendered by JS -->
-                        <div class="empty" id="approval-empty" style="display:none;">No pending approvals.</div>
                     </div>
+                    <div class="empty" id="approval-empty" style="display:none;">No pending approvals.</div>
                 </section>
 
                 <!-- AI AGENT PIPELINE -->
@@ -212,6 +212,25 @@
             return div.innerHTML;
         }
 
+        // Format -> CSS badge class. Module scope because both
+        // renderContentCard() and renderApproval() use it.
+        const formatMap = {
+            'CAROUSEL': 'format-carousel',
+            'SINGLE_IMAGE': 'format-single-image',
+            'REEL': 'format-reel',
+            'INFOGRAPHIC': 'format-infographic',
+            'TEXT_POST': 'format-text-post',
+            'MEME': 'format-meme',
+            'STORY_POLL': 'format-story-poll'
+        };
+
+        function formatLabel(fmt) {
+            return String(fmt || 'CAROUSEL').toUpperCase().replace(/_/g, ' ');
+        }
+
+        // Idea lists for the currently rendered approval queue, keyed by item id.
+        let approvalIdeas = {};
+
         // ---- RENDER RECENT CONTENT ----
         function renderRecentContent(items, containerId) {
             const container = document.getElementById(containerId);
@@ -252,17 +271,8 @@
             }
 
             let formatClass = 'format-carousel';
-            const formatMap = {
-                'CAROUSEL': 'format-carousel',
-                'SINGLE_IMAGE': 'format-single-image',
-                'REEL': 'format-reel',
-                'INFOGRAPHIC': 'format-infographic',
-                'TEXT_POST': 'format-text-post',
-                'MEME': 'format-meme',
-                'STORY_POLL': 'format-story-poll'
-            };
             const fmt = format.toUpperCase().replace(/_/g, ' ');
-            if (formatMap[fmt]) formatClass = formatMap[fmt];
+            if (formatMap[format.toUpperCase()]) formatClass = formatMap[format.toUpperCase()];
 
             let statusClass = 'status-pending_approval';
             const statusMap = {
@@ -315,105 +325,128 @@
         function renderApproval(pendingItems) {
             const container = document.getElementById('approval-list');
             const empty = document.getElementById('approval-empty');
+
+            approvalIdeas = {};
+
             if (!pendingItems || pendingItems.length === 0) {
-                container.innerHTML = '<div class="empty">No pending approvals.</div>';
-                empty.style.display = 'block';
+                container.innerHTML = '';
+                if (empty) empty.style.display = 'block';
                 return;
             }
-            empty.style.display = 'none';
+            if (empty) empty.style.display = 'none';
 
             const itemsHtml = [];
             for (const item of pendingItems) {
-                const id = item.id;
-                const stage = item.stage || 'idea';
-                const topic = item.topic || 'Untitled';
-                const format = item.format || 'CAROUSEL';
-                const status = item.status || 'pending_approval';
-                const selected = item.selected_idea || (item.ideas && item.ideas.length ? item.ideas[0]?.title : null);
-                const ideas = item.ideas || [];
-                const copy = item.copy || (item.structured_idea ? item.structured_idea.copy : null);
-                const design = item.design || (item.structured_idea ? item.structured_idea.design : null);
+                try {
+                    const id = item.id;
+                    const stage = item.stage || 'idea';
+                    const topic = item.topic || 'Untitled';
+                    const format = item.format || 'CAROUSEL';
+                    const ideas = Array.isArray(item.ideas) ? item.ideas : [];
+                    const copy = item.copy || (item.structured_idea ? item.structured_idea.copy : null);
+                    const design = item.design || (item.structured_idea ? item.structured_idea.design : null);
 
-                const stageLabel = stage === 'idea' ? 'Idea' :
-                                   stage === 'idea_review' ? 'Idea Review' :
-                                   stage === 'copy' ? 'Copy' :
-                                   stage === 'design' ? 'Design' :
-                                   stage === 'publish' ? 'Final Review' :
-                                   stage === 'done' ? 'Ready' : stage;
+                    approvalIdeas[String(id)] = ideas;
 
-                // Approval badge for the current stage
-                let badge = '';
-                if (stage === 'idea' || stage === 'idea_review') {
-                    badge = '<span class="approval-badge approval-badge-idea">1 idea</span>';
-                } else if (stage === 'copy') {
-                    badge = '<span class="approval-badge approval-badge-copy">1 copy</span>';
-                } else if (stage === 'design') {
-                    badge = '<span class="approval-badge approval-badge-design">1 design</span>';
-                } else {
-                    badge = '<span class="approval-badge">Ready</span>';
-                }
+                    const stageLabel = stage === 'idea' ? 'Idea' :
+                                       stage === 'idea_review' ? 'Idea Review' :
+                                       stage === 'copy' ? 'Copy' :
+                                       stage === 'design' ? 'Design' :
+                                       stage === 'publish' ? 'Final Review' :
+                                       stage === 'done' ? 'Ready' : stage;
 
-                // Human action buttons
-                const actions = '<div class="approval-actions">' +
-                    '<button class="btn-sm approve-btn" data-action="approve_' + stage + '" data-item-id="' + id + '">Approve</button>' +
-                    '<button class="btn-sm reject-btn" data-action="reject" data-item-id="' + id + '">Reject</button>' +
-                '</div>';
-
-                // Preview / context for the current stage
-                let preview = '';
-                if (stage === 'idea' || stage === 'idea_review') {
-                    const ideaList = ideas.map((ie, idx) =>
-                        '<div class="preview-stage-row">' +
-                        '<span class="idea-radio"><input type="radio" name="select-idea-' + id + '" value="' + escapeHtml(ie.title) + '"></span>' +
-                        '<span class="idea-title">' + escapeHtml(ie.title) + '</span>' +
-                        '<span class="idea-format">' + (formatMap[escapeHtml(ie.format) || 'CAROUSEL'].replace(/_/g, ' ') || 'CAROUSEL') + '</span>' +
-                        '</div>'
-                    ).join('');
-                    preview = '<div class="preview-stage">' +
-                        (ideas.length ? ideaList : '<div class="empty">No ideas generated.</div>') +
-                        '</div>';
-                } else if (stage === 'copy') {
-                    if (copy && typeof copy === 'object') {
-                        const slides = copy.slides || [];
-                        preview = '<div class="preview-stage">' +
-                            '<div class="preview-stage-row"><span class="idea-format">' + format + '</span></div>' +
-                            (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No copy.</div>') +
-                            '</div>';
-                    } else if (typeof copy === 'string') {
-                        preview = '<div class="preview-stage"><div class="preview-stage-row">' + escapeHtml(copy.slice(0, 80)) + '</div></div>';
+                    // Approval badge for the current stage
+                    let badge = '';
+                    if (stage === 'idea' || stage === 'idea_review') {
+                        badge = '<span class="approval-badge approval-badge-idea">' + ideas.length + ' idea' + (ideas.length === 1 ? '' : 's') + '</span>';
+                    } else if (stage === 'copy') {
+                        badge = '<span class="approval-badge approval-badge-copy">1 copy</span>';
+                    } else if (stage === 'design') {
+                        badge = '<span class="approval-badge approval-badge-design">1 design</span>';
                     } else {
-                        preview = '<div class="preview-stage"><div class="empty">No copy.</div></div>';
+                        badge = '<span class="approval-badge">Ready</span>';
                     }
-                } else if (stage === 'design') {
-                    let slides = [];
-                    let count = 0;
-                    if (design && typeof design === 'object') {
-                        if (design.slides) { slides.push(...design.slides); count = design.slides.length; }
-                        else { slides.push(design); count = 1; }
-                    } else if (typeof design === 'string') {
-                        slides.push(design); count = 1;
-                    }
-                    preview = '<div class="preview-stage">' +
-                        '<div class="preview-stage-row"><span class="idea-format">Design ' + count + '</span></div>' +
-                        (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No design.</div>') +
-                        '</div>';
-                } else if (stage === 'publish') {
-                    preview = '<div class="preview-stage"><div class="empty">Ready for final publish approval.</div></div>';
-                } else if (stage === 'done') {
-                    preview = '<div class="preview-stage"><div class="empty">Published.</div></div>';
-                }
 
-                itemsHtml.push('<div class="approval-item">' +
-                    '<div class="approval-head">' +
-                    badge +
-                    '<span class="approval-topic">' + escapeHtml(topic) + '</span>' +
-                    '</div>' +
-                    '<div class="approval-stage-row">' +
-                    '<span class="approval-stage">' + stageLabel + '</span>' +
-                    '</div>' +
-                    '<div class="approval-preview">' + preview + '</div>' +
-                    actions +
-                    '</div>');
+                    // One action vocabulary, shared with dashboard/app.py.
+                    const btn = (action, label, cls) =>
+                        '<button class="btn-sm ' + cls + '" data-action="' + action + '" data-item-id="' + id + '">' + label + '</button>';
+                    let primary = '';
+                    if (stage === 'idea') primary = btn('approve_idea', 'Generate Ideas', 'approve-btn');
+                    else if (stage === 'idea_review' && ideas.length) primary = btn('select_idea', 'Use Selected Idea', 'approve-btn');
+                    else if (stage === 'idea_review') primary = btn('approve_idea', 'Generate Ideas', 'approve-btn');
+                    else if (stage === 'copy') primary = btn('approve_copy', 'Approve Copy', 'approve-btn');
+                    else if (stage === 'design') primary = btn('approve_design', 'Approve Design', 'approve-btn');
+                    else if (stage === 'publish') primary = btn('publish', 'Publish', 'approve-btn');
+
+                    const canReject = ['idea', 'idea_review', 'copy', 'design'].includes(stage);
+                    const reject = canReject ? btn('reject', 'Reject', 'reject-btn') : '';
+                    const actions = '<div class="approval-actions">' + primary + reject + '</div>';
+
+                    // Preview / context for the current stage
+                    let preview = '';
+                    if (stage === 'idea' || stage === 'idea_review') {
+                        const ideaList = ideas.map((ie, idx) =>
+                            '<div class="preview-stage-row">' +
+                            '<span class="idea-radio"><input type="radio" name="select-idea-' + id + '" value="' + idx + '"' + (idx === 0 ? ' checked' : '') + '></span>' +
+                            '<span class="idea-title">' + escapeHtml(ie.title || '') + '</span>' +
+                            '<span class="idea-format">' + escapeHtml(formatLabel(ie.format)) + '</span>' +
+                            '</div>'
+                        ).join('');
+                        preview = '<div class="preview-stage">' +
+                            (ideas.length ? ideaList : '<div class="empty">No ideas generated.</div>') +
+                            '</div>';
+                    } else if (stage === 'copy') {
+                        if (copy && typeof copy === 'object') {
+                            const slides = copy.slides || [];
+                            preview = '<div class="preview-stage">' +
+                                '<div class="preview-stage-row"><span class="idea-format">' + escapeHtml(formatLabel(format)) + '</span></div>' +
+                                (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No copy.</div>') +
+                                '</div>';
+                        } else if (typeof copy === 'string') {
+                            preview = '<div class="preview-stage"><div class="preview-stage-row">' + escapeHtml(copy.slice(0, 80)) + '</div></div>';
+                        } else {
+                            preview = '<div class="preview-stage"><div class="empty">No copy.</div></div>';
+                        }
+                    } else if (stage === 'design') {
+                        let slides = [];
+                        let count = 0;
+                        if (design && typeof design === 'object') {
+                            if (design.slides) { slides.push(...design.slides); count = design.slides.length; }
+                            else if (design.frames) { slides.push(...design.frames); count = design.frames.length; }
+                            else if (design.scenes) { slides.push(...design.scenes); count = design.scenes.length; }
+                            else { slides.push(design); count = 1; }
+                        } else if (typeof design === 'string') {
+                            slides.push(design); count = 1;
+                        }
+                        preview = '<div class="preview-stage">' +
+                            '<div class="preview-stage-row"><span class="idea-format">Design ' + count + '</span></div>' +
+                            (slides.length ? slides.map((s, i) => '<div class="preview-stage-row">' + escapeHtml(String(s && s.file ? s.file : s).slice(0, 60)) + '</div>').join('') : '<div class="empty">No design.</div>') +
+                            '</div>';
+                    } else if (stage === 'publish') {
+                        preview = '<div class="preview-stage"><div class="empty">Ready for final publish approval.</div></div>';
+                    } else if (stage === 'done') {
+                        preview = '<div class="preview-stage"><div class="empty">Published.</div></div>';
+                    }
+
+                    itemsHtml.push('<div class="approval-item">' +
+                        '<div class="approval-head">' +
+                        badge +
+                        '<span class="approval-topic">' + escapeHtml(topic) + '</span>' +
+                        '</div>' +
+                        '<div class="approval-stage-row">' +
+                        '<span class="approval-stage">' + stageLabel + '</span>' +
+                        '</div>' +
+                        '<div class="approval-preview">' + preview + '</div>' +
+                        actions +
+                        '</div>');
+                } catch (itemError) {
+                    // One malformed item must not abort the whole dashboard.
+                    console.error('Failed to render approval item:', item && item.id, itemError);
+                    itemsHtml.push('<div class="approval-item">' +
+                        '<div class="approval-head"><span class="approval-topic">Item ' +
+                        escapeHtml(item && item.id) + ' could not be rendered</span></div>' +
+                        '</div>');
+                }
             }
             container.innerHTML = itemsHtml.join('');
         }
@@ -586,33 +619,58 @@
                 });
         };
 
-        // ---- APPROVE BUTTONS ----
-        document.querySelectorAll('.approve-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const action = this.dataset.action;
-                const itemId = this.dataset.itemId;
-                const btn = this;
-                btn.disabled = true;
-                btn.textContent = 'Processing...';
-                fetch('/api/action/' + itemId, {
+        // ---- APPROVAL ACTIONS (event delegation) ----
+        // Approval buttons are created dynamically by renderApproval(), so a
+        // listener attached at page load would never see them. Delegate from
+        // the container instead.
+        document.getElementById('approval-list').addEventListener('click', async function(e) {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+
+            const itemId = btn.dataset.itemId;
+            const action = btn.dataset.action;
+            const payload = { action: action };
+
+            if (action === 'select_idea') {
+                const checked = document.querySelector('input[name="select-idea-' + itemId + '"]:checked');
+                if (!checked) {
+                    alert('Choose an idea first.');
+                    return;
+                }
+                const idea = (approvalIdeas[String(itemId)] || [])[Number(checked.value)];
+                if (!idea || !idea.title) {
+                    alert('Could not read the selected idea.');
+                    return;
+                }
+                payload.selected_idea = idea.title;
+            }
+
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Working...';
+            try {
+                const res = await fetch('/api/action/' + itemId, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: action })
-                })
-                .then(res => {
-                    if (res.ok) {
-                        loadState();
-                        alert('Approved: ' + action);
-                    } else {
-                        alert('Failed to approve: ' + action);
-                    }
-                })
-                .catch(err => console.error('Error:', err))
-                .finally(() => {
-                    btn.disabled = false;
-                    btn.textContent = 'Review';
+                    body: JSON.stringify(payload)
                 });
-            });
+                if (!res.ok) {
+                    let message = 'HTTP ' + res.status;
+                    try {
+                        const err = await res.json();
+                        if (err && err.error) message = err.error;
+                    } catch (_) { /* non-JSON error body */ }
+                    alert('Action failed: ' + message);
+                    return;
+                }
+                await loadState();
+            } catch (err) {
+                console.error('Action failed:', err);
+                alert('Action failed: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         });
 
         // ---- NOTIFICATION BUTTON ----
