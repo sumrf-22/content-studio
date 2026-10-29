@@ -566,3 +566,62 @@ uses a temporary data directory.
 ### Next steps
 - Phase 7: architecture, API, data, testing, integration, and audit docs; then a
   fresh-clone acceptance run.
+
+## Phase 7 — Documentation and acceptance (2026-10-29)
+
+**Status:** documentation complete; fresh-clone acceptance recorded below.
+
+### Findings before the change
+
+1. **Four documents existed, six were missing.** `SETUP.md`, `SECURITY.md`,
+   `PROGRESS.md`, and `DECISIONS.md` covered install, deployment, history, and
+   decisions, but there was no architecture map, API reference, data schema,
+   testing guide, integration guide, or consolidated audit result. A new
+   maintainer had to read the source to learn the stage machine or the JSON
+   shape.
+2. **`README.md` was stale and wrong.** It told the reader to `cd
+   D:\Content-Studio` — a path that does not exist — and omitted Playwright,
+   the mock publisher, the test commands, and every document.
+3. **`docs/SETUP.md` test counts were stale.** It still reported `76 passed` and
+   `1 passed, 76 deselected` after Phase 6 raised the totals to 83 + 1.
+
+### Changes
+
+- `docs/ARCHITECTURE.md` (new): runtime topology, module responsibilities,
+  request lifecycle, the stage/action machine, data flow, per-format rendering
+  table, path model, concurrency, failure handling, security boundary, and
+  extension points.
+- `docs/API.md` (new): conventions, auth/CSRF rules, every endpoint, action
+  contract, error matrix, status codes, and PowerShell examples.
+- `docs/DATABASE.md` (new): file layout, `state.json` schema, per-format copy
+  and design shapes, id allocation, atomic writes, invariants, backups,
+  retention, schema evolution, and known data notes.
+- `docs/TESTING.md` (new): commands, per-file coverage table, fixtures, e2e
+  internals, manual checklist, conventions, gaps, and troubleshooting.
+- `docs/INTEGRATIONS.md` (new): OpenRouter request/mode/failure behaviour, imgbb
+  egress and failure mode, mock publishing, and the requirements for a future
+  Meta Graph integration.
+- `docs/AUDIT_RESULT.md` (new): findings per phase, acceptance criteria,
+  verification evidence, commit list, residual risks, and fresh-clone results.
+- `docs/SETUP.md`: current test counts and a pointer to the new docs.
+- `README.md`: correct project path, quick start including
+  `playwright install chromium`, test commands, publisher note, and a
+  documentation index.
+
+### Verification
+
+- `pytest -q`: `83 passed, 1 deselected in 224.67s`.
+- `pytest -m e2e`: `1 passed, 83 deselected in 20.36s`.
+- Cross-checked every documented field, route, status code, canvas size, and
+  environment variable against the current source before writing it.
+
+### Data changes
+
+None. Documentation only.
+
+### Blockers
+- None.
+
+### Next steps
+- Fresh clone: follow `docs/SETUP.md`, start the app, publish one item, and run
+  both test commands. Record the result in `docs/AUDIT_RESULT.md` and here.

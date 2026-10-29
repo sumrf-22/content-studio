@@ -118,7 +118,7 @@ Browser end-to-end suite:
 .\.venv\Scripts\python.exe -m pytest -m e2e
 ```
 
-Current results: `76 passed, 1 deselected` for the fast suite and `1 passed, 76
+Current results: `83 passed, 1 deselected` for the fast suite and `1 passed, 83
 deselected` for e2e. The e2e run starts a real `run.py` on a free port against a
 temporary data directory and writes screenshots plus `e2e_server.log` to
 `tests/artifacts/` (gitignored). The operator's `data/` is never touched.
