@@ -731,3 +731,51 @@ handler called `preventDefault()` for every sidebar link before checking
 ### Data changes
 
 None.
+
+## Post-audit Task 3 — Story-poll black thumbnail (2026-10-29)
+
+**Status:** complete.
+
+### Reproduction (recorded before fixing)
+
+1. Opened the dashboard against the real `data/` root.
+2. Item 15 (`Format sweep story-poll`, STORY_POLL, done) maps to
+   `data/renders/item_15/frame_1.png` and `frame_2.png`. Both exist, are
+   `1080x1920`, and have 754 distinct colours each, so the render itself is
+   fine and the preview route returns them (`naturalWidth=1080`,
+   `naturalHeight=1920` in the browser).
+3. The card thumbnail is `.content-thumb img` with `height: 110px`,
+   `width: 100%`, `object-fit: cover`. With a 526 px-wide card the image
+   displays at 526x935 and the default `object-position: 50% 50%` crops the
+   middle band (y≈412–522). That band of `frame_1.png` contains exactly one
+   distinct colour — solid black — because the frame's text sits in the top
+   third and the rest is empty background.
+4. Therefore the thumbnail looked black even though the asset was healthy:
+   **root cause is the thumbnail crop, not rendering, field mapping, or the
+   preview route.** Evidence: `tests/artifacts/task3_before_thumb.png`.
+
+### Changes
+
+- `static/style.css`: `.content-thumb img` now sets
+  `object-position: top center`, so tall story/reel frames crop from the top
+  where the text is. This applies to every thumbnail and leaves the assets
+  untouched.
+- `tests/test_renderer.py`: `test_story_poll_frames_are_not_blank` asserts every
+  STORY_POLL frame is `1080x1920`, has more than one distinct colour, and that
+  the top band used by the thumbnail crop is not blank.
+- `tests/e2e/test_ui_pipeline.py`: `_assert_story_thumbnail_shows_content`
+  checks the published story card image is a loaded 1080x1920 asset with a
+  top-anchored crop (`50% 0%`).
+
+### Verification
+
+- `pytest tests/test_renderer.py -q`: `12 passed`.
+- `pytest -m e2e`: `2 passed, 84 deselected`.
+- After the fix the card thumbnail shows "Frame 1 / 2" and the headline:
+  `tests/artifacts/task3_after_thumb.png`.
+
+### Data changes
+
+None. No render or item file was regenerated, edited, or deleted, so no
+`data/_backup_<timestamp>/` was required for this task.
+

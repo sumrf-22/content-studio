@@ -67,6 +67,35 @@ def test_each_image_format_uses_its_own_canvas(fmt, render_dir):
         assert (kite.DATA_ROOT.parent / relative).is_file(), relative
 
 
+def test_story_poll_frames_are_not_blank(render_dir):
+    """The story-poll frames must be real 1080x1920 art, not black canvases."""
+    copy = vera.run("kitchen storage habits", "STORY_POLL")
+    design = kite.run(705, copy, "STORY_POLL")
+
+    frames = sorted((render_dir / "item_705").glob("frame_*.png"))
+    assert frames, "STORY_POLL rendered no frames"
+    assert design["count"] == len(frames)
+
+    for frame_path in frames:
+        with Image.open(frame_path) as image:
+            assert image.size == (1080, 1920), image.size
+            colors = image.convert("RGB").getcolors(maxcolors=1_000_000)
+            assert colors is not None and len(colors) > 1, (
+                f"{frame_path.name} is a single flat colour"
+            )
+
+    # The dashboard crops tall frames from the top for the card thumbnail, so
+    # the top band must contain visible content rather than empty background.
+    with Image.open(frames[0]) as image:
+        width, height = image.size
+        thumb_width = 526
+        scale = thumb_width / width
+        band_height = round(110 / scale)
+        top_band = image.convert("RGB").crop((0, 0, width, band_height))
+        colors = top_band.getcolors(maxcolors=1_000_000)
+        assert colors is not None and len(colors) > 1, "top of frame is blank"
+
+
 def test_carousel_renders_one_slide_per_copy_slide(render_dir):
     copy = vera.run("kitchen storage habits", "CAROUSEL")
     design = kite.run(701, copy, "CAROUSEL")

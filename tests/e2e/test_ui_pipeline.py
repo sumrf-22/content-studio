@@ -124,6 +124,23 @@ def _assert_recent_toggle_label(page):
     assert "▾" in collapsed and "View All" in collapsed, collapsed
 
 
+def _assert_story_thumbnail_shows_content(page, topic):
+    """A 1080x1920 card thumbnail must crop from the top, not the empty middle."""
+    card = page.locator(".content-card", has_text=topic).first
+    expect(card).to_be_visible(timeout=30000)
+    image = card.locator(".content-thumb img").first
+    expect(image).to_be_visible(timeout=30000)
+    assert image.evaluate("img => img.complete && img.naturalWidth > 0")
+    assert image.evaluate("img => [img.naturalWidth, img.naturalHeight]") == [
+        1080,
+        1920,
+    ]
+    position = image.evaluate("img => getComputedStyle(img).objectPosition")
+    # Browsers normalise "top center" to "50% 0%" (x y); the vertical anchor
+    # must be the top edge.
+    assert position.split()[-1] == "0%", position
+
+
 def test_ui_pipeline_publishes_two_formats_without_errors(server):
     console_errors = []
     page_errors = []
@@ -161,6 +178,7 @@ def test_ui_pipeline_publishes_two_formats_without_errors(server):
         story = _run_pipeline(
             page, server, "E2E story topic", 6, "STORY_POLL", (1080, 1920)
         )
+        _assert_story_thumbnail_shows_content(page, "E2E story topic")
 
         page.screenshot(
             path=str(server.artifacts / "e2e_dashboard.png"), full_page=True

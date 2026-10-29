@@ -681,6 +681,10 @@ html, body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    /* Tall story frames (1080x1920) put their text at the top. Centering the
+       crop landed on the empty lower half and looked like a solid black
+       thumbnail. Anchor the crop to the top so the meaningful area shows. */
+    object-position: top center;
 }
 
 .content-actions {
