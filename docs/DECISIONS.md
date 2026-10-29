@@ -206,3 +206,48 @@ cross-site posts are rejected at the guard.
 
 **Consequence:** Any future form-based UI or non-browser client must send JSON and
 an honest `Origin`. API tests that post form data will get `415` by design.
+
+## D-018 — `CONTENT_STUDIO_DATA_DIR` is the one data-root override
+
+**Decision:** `core/state.py` reads `CONTENT_STUDIO_DATA_DIR` (default
+`<project>/data`). State, renders, publish snapshots, and the `/api/asset`
+allowlist all derive from that resolved folder.
+
+**Why:** Tests and the browser e2e need a real server without touching the
+operator's pipeline. Threading a path argument through every agent would have
+changed every call site; one environment variable keeps the production default
+identical.
+
+**Consequence:** The override must be set before Python imports `core.state`
+(module-level constant). A process cannot switch data roots at runtime. Any new
+module that writes data must import `DATA` from `core.state` instead of
+recomputing `Path(__file__).parent.parent / "data"`.
+
+## D-019 — e2e tests run a real server against a temporary data directory
+
+**Decision:** The Playwright suite starts `run.py` as a subprocess on a free
+port with `CONTENT_STUDIO_DATA_DIR=<tmp>`, then drives the UI with real clicks.
+The default `pytest` run excludes e2e via `addopts = -m "not e2e"`; `pytest -m
+e2e` runs only the browser suite.
+
+**Why:** Mocking Flask or the network would not catch the class of bugs found in
+Phases 1–5 (stale DOM listeners, hidden controls, asset 404s). Excluding e2e from
+the default run keeps the fast suite usable while still making the browser flow a
+first-class, repeatable check.
+
+**Consequence:** `playwright install chromium` is a setup step (documented in
+`docs/SETUP.md`). Artifacts land in the gitignored `tests/artifacts/`. CI must
+install browser binaries or skip the marker.
+
+## D-020 — REEL scene cards use the 1080×1920 canvas
+
+**Decision:** Kite renders REEL scene cards at 1080×1920, matching
+`STORY_POLL`, instead of the 1080×1350 feed canvas.
+
+**Why:** Reels are vertical video. A 4:5 card cannot be used as a reel frame
+without cropping, and Phase 2 had already flagged the mismatch as a renderer
+fix.
+
+**Consequence:** Previously published items keep their 1350-tall assets; only
+new renders are vertical. Any downstream step that assumed 1080×1350 for REEL
+must read the actual image size.

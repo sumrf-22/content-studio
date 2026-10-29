@@ -419,3 +419,84 @@ None. The origin-test request was rejected before it reached `create_item()`.
 
 ### Next steps
 - Phase 5: renderer/API/e2e Playwright tests, artifacts in `tests/artifacts/`.
+
+## Phase 5 — Tests: renderer, API, browser e2e (2026-10-29)
+
+**Status:** complete.
+
+### Reproductions (recorded before fixing)
+
+1. **Only the first idea could be selected in the browser.** The idea rows were
+   `<div>`s and the radio inputs were `display:none` with no `<label>`, so
+   `document.querySelectorAll('.preview-stage-row')[2].click()` left every radio
+   in its original state (`[true, false, false]` stayed unchanged). A person
+   could publish idea 0 and nothing else. The companion rule
+   `.idea-radio input:checked + .idea-title` could never match either, because
+   the input has no sibling — only the span and title after it.
+2. **REEL scene cards used the feed canvas.** Phase 2 recorded 1080×1350 cards
+   for a vertical video format. `agent/kite.py` hard-coded `HEIGHT` in
+   `_create_vertical_scene_scene_card` even though the story renderer already
+   used `HEIGHT_VERTICAL`.
+3. **No isolation seam for tests.** `core/state.py`, `agents/kite.py`,
+   `agents/orin.py`, and `/api/asset` each recomputed or hard-coded the `data/`
+   path, so an end-to-end test could only run against the operator's real
+   pipeline.
+
+### Changes
+
+- `core/state.py`: `DATA` honours `CONTENT_STUDIO_DATA_DIR` (defaults to
+  `<project>/data`).
+- `agents/kite.py`: `RENDER_DIR = DATA_ROOT / "renders"`, `_rel()` relative to
+  `DATA_ROOT.parent`, and REEL scene cards now render 1080×1920.
+- `agents/orin.py`: publish snapshots go to `<data>/published`.
+- `dashboard/app.py`: `/api/asset` resolves `data/renders/...` under the
+  configured data root.
+- `templates/index.html`: idea rows are now `<label>` elements, so the whole row
+  is a click and keyboard target for the hidden radio.
+- `static/style.css`: focusable-but-hidden radios, a filled dot for the checked
+  choice, checked-row highlight, `:focus-within` outline, and removal of the
+  duplicated/dead checked-title rule.
+- `tests/conftest.py` (new): `isolated_data` redirects state, renders, publish
+  output and the asset root at `tmp_path`; `mock_llm` forces mock mode.
+- `tests/test_renderer.py` (new, 11 tests): canvas size per format, PNG output,
+  one slide per copy slide, one scene card + script per REEL scene, real
+  newlines in `TEXT_POST`, invalid-copy failure shape, item folder contents.
+- `tests/test_api.py` (new, 17 tests): full create → ideas → select → copy →
+  design → publish pipeline with asset fetches and the final snapshot, all seven
+  formats, early-publish rejection, missing item, unknown action, missing title,
+  render-failure rollback, reject/regenerate, post-publish lockout, text assets.
+- `tests/e2e/test_ui_pipeline.py` (new, 1 test, marked `e2e`): starts a real
+  `run.py` on a free port with `CONTENT_STUDIO_DATA_DIR=<tmp>`, then clicks
+  CAROUSEL and STORY_POLL through the UI, checks preview dimensions, the final
+  state, console/page errors, `/api/` 4xx/5xx responses, and the publish
+  snapshot.
+- `pytest.ini`: `addopts = -m "not e2e"` keeps the default run fast; `-m e2e`
+  selects the browser suite.
+- `requirements.txt`: `playwright==1.64.1` pinned.
+
+### Verification
+
+- `pytest -q`: `76 passed, 1 deselected in 135.40s`.
+- `pytest -m e2e`: `1 passed, 76 deselected in 22.61s`.
+- The e2e run published two items in a temporary data directory. Six artifacts
+  are written to `tests/artifacts/` (gitignored): carousel and story design
+  screenshots, the dashboard screenshot, and `e2e_server.log`.
+- Isolation checked afterwards: the real `data/state.json` contains no `E2E`
+  topic and the two temp items never appear in the real render tree.
+- Manual check in the real browser: rendering a synthetic three-idea review card
+  and clicking the third row produced `[false, false, true]` and an 8×8 check
+  dot, confirming the label fix in the shipped CSS.
+- The server was restarted on the new code (`run.py`, `127.0.0.1:8080`, debug
+  off).
+
+### Data changes
+
+None in `data/`. Test output is confined to pytest temp directories; the e2e
+server log and screenshots live in the gitignored `tests/artifacts/`.
+
+### Blockers
+- None.
+
+### Next steps
+- Phase 6: make the mock publisher the explicit default and refuse real Meta
+  Graph publishing until an account/app is confirmed.

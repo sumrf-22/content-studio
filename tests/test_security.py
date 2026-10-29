@@ -21,6 +21,7 @@ def project_root(tmp_path, monkeypatch):
     (root / "state.json").write_text("{}", encoding="utf-8")
     (root / "secret.txt").write_text("do not serve", encoding="utf-8")
     monkeypatch.setattr(app_module, "BASE_DIR", str(root))
+    monkeypatch.setattr(app_module, "DATA_ROOT", root / "data")
     return root
 
 

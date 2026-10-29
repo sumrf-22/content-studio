@@ -7,10 +7,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 from config import IMGBB_API_KEY
 from core import models
+from core.state import DATA as DATA_ROOT
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-RENDER_DIR = BASE_DIR / "data" / "renders"
+RENDER_DIR = DATA_ROOT / "renders"
 
 WIDTH = 1080
 HEIGHT = 1350
@@ -18,9 +19,13 @@ HEIGHT_VERTICAL = 1920
 
 
 def _rel(path):
-    """Store asset paths relative to the project root, using forward slashes."""
+    """Store asset paths relative to the data root's parent, forward slashes.
+
+    With the default layout that is ``data/renders/item_9/slide_1.png``, which
+    `/api/asset` resolves under the configured data directory.
+    """
     try:
-        return Path(path).resolve().relative_to(BASE_DIR).as_posix()
+        return Path(path).resolve().relative_to(DATA_ROOT.parent).as_posix()
     except ValueError:
         return str(path)
 
@@ -151,13 +156,15 @@ def _create_visual_background(slide, index):
 def _create_vertical_scene_scene_card(scene_num, visual_direction, on_screen_text):
     """
     Create a scene-card asset for REEL format.
-    1080x1350 is the fallback; the scene card is a standalone visual.
+
+    Reels are vertical video, so the card uses the 1080x1920 story canvas
+    rather than the 1080x1350 feed canvas.
     """
-    img = Image.new("RGB", (WIDTH, HEIGHT))
+    img = Image.new("RGB", (WIDTH, HEIGHT_VERTICAL))
     draw = ImageDraw.Draw(img)
 
     # Dark background
-    draw.rectangle([(0, 0), (WIDTH, HEIGHT)], fill=(15, 20, 30))
+    draw.rectangle([(0, 0), (WIDTH, HEIGHT_VERTICAL)], fill=(15, 20, 30))
 
     # Scene number badge
     font_num = _font(64, bold=True)
@@ -165,16 +172,16 @@ def _create_vertical_scene_scene_card(scene_num, visual_direction, on_screen_tex
     bbox = draw.textbbox((0, 0), text, font=font_num)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.rectangle(
-        [(WIDTH // 2 - tw // 2 - 40, HEIGHT // 2 - th // 2 - 25),
-         (WIDTH // 2 + tw // 2 + 40, HEIGHT // 2 + th // 2 + 15)],
+        [(WIDTH // 2 - tw // 2 - 40, HEIGHT_VERTICAL // 2 - th // 2 - 25),
+         (WIDTH // 2 + tw // 2 + 40, HEIGHT_VERTICAL // 2 + th // 2 + 15)],
         fill=(60, 140, 220), outline=(255, 255, 255), width=4
     )
-    draw.text((WIDTH // 2, HEIGHT // 2 - th // 2), text, font=font_num, fill="white")
+    draw.text((WIDTH // 2, HEIGHT_VERTICAL // 2 - th // 2), text, font=font_num, fill="white")
 
     # Visual direction
     font_dir = _font(44)
     lines_dir = _wrap(visual_direction, font_dir, 900)
-    y_dir = HEIGHT // 2 + 60
+    y_dir = HEIGHT_VERTICAL // 2 + 60
     for line in lines_dir:
         draw.text((WIDTH // 2, y_dir), line, font=font_dir, fill=(220, 225, 230))
         y_dir += 60
@@ -182,7 +189,7 @@ def _create_vertical_scene_scene_card(scene_num, visual_direction, on_screen_tex
     # On-screen text
     font_ost = _font(40)
     lines_ost = _wrap(on_screen_text, font_ost, 900)
-    y_ost = HEIGHT // 2 + 200
+    y_ost = HEIGHT_VERTICAL // 2 + 200
     for line in lines_ost:
         draw.text((WIDTH // 2, y_ost), line, font=font_ost, fill=(255, 215, 0))
         y_ost += 55

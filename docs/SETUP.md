@@ -31,11 +31,18 @@ tests and docs live in `D:\content_studio\content_studio`.
 | flask | 3.1.3 | Installed and verified in the baseline venv |
 | requests | 2.34.2 | Installed and verified in the baseline venv |
 | Pillow | 12.3.0 | Installed and verified in the baseline venv |
-| pytest | 9.2.0 | Latest release on PyPI at 2026-10-27; requires Python >= 3.10 |
+| pytest | 9.2.0 | Added in Phase 0; requires Python >= 3.10 |
+| playwright | 1.64.1 | Added in Phase 5 for the browser e2e suite |
 
-`pytest` was added in Phase 0. The other pins match what was already installed, so
-the baseline behaviour is unchanged. New dependencies added in later phases must be
-pinned here as well.
+`pytest` was added in Phase 0. The other runtime pins match what was already
+installed, so the baseline behaviour is unchanged. New dependencies added in
+later phases must be pinned here as well.
+
+Playwright also needs a browser binary once per machine:
+
+```powershell
+.\.venv\Scripts\python.exe -m playwright install chromium
+```
 
 ## Install
 
@@ -69,6 +76,7 @@ Without an OpenRouter key the app runs in mock mode. At baseline there was no
 | `CONTENT_STUDIO_PORT` | `8080` | |
 | `CONTENT_STUDIO_DEBUG` | off | Enables the reloader and the Werkzeug debugger. |
 | `CONTENT_STUDIO_TOKEN` | unset | Shared secret required for non-localhost access. |
+| `CONTENT_STUDIO_DATA_DIR` | `<project>/data` | Overrides the state, render, and publish root. Must be set before start. |
 | `OPENROUTER_API_KEY` | unset | Empty means mock mode. |
 | `OPENROUTER_MODEL` | `openrouter/free` | Free routing only. |
 
@@ -97,15 +105,25 @@ paths, and the same `127.0.0.1:8080` bind.
 
 ## Test
 
+Fast suite (renderer, API, security, state):
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Baseline result: `2 passed` (`tests/test_smoke.py`). Current result: `48 passed`
-across smoke, Phase 1, Phase 2, Phase 3, and security tests.
+Browser end-to-end suite:
 
-`pytest.ini` sets `pythonpath = .`, so tests can import `dashboard.app` from the
-project root. The `e2e` marker is reserved for the Playwright suite in Phase 5.
+```powershell
+.\.venv\Scripts\python.exe -m pytest -m e2e
+```
+
+Current results: `76 passed, 1 deselected` for the fast suite and `1 passed, 76
+deselected` for e2e. The e2e run starts a real `run.py` on a free port against a
+temporary data directory and writes screenshots plus `e2e_server.log` to
+`tests/artifacts/` (gitignored). The operator's `data/` is never touched.
+
+`pytest.ini` sets `pythonpath = .` so tests can import `dashboard.app` from the
+project root, and `addopts = -m "not e2e"` keeps the default run browser-free.
 
 ## Data safety
 

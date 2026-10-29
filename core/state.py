@@ -7,8 +7,11 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 
-DATA = Path(__file__).resolve().parent.parent / "data"
-DATA.mkdir(exist_ok=True)
+DATA = Path(
+    os.environ.get("CONTENT_STUDIO_DATA_DIR")
+    or (Path(__file__).resolve().parent.parent / "data")
+).resolve()
+DATA.mkdir(parents=True, exist_ok=True)
 STATE = DATA / "state.json"
 
 # Flask's development server is threaded, so a save can race a concurrent

@@ -1204,6 +1204,16 @@ html, body {
     background: var(--bg-card);
     border-radius: var(--radius-sm);
     font-size: 12px;
+    cursor: pointer;
+}
+
+.preview-stage-row:has(input:checked) {
+    outline: 1px solid var(--accent);
+}
+
+.preview-stage-row:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 .idea-radio {
@@ -1215,14 +1225,31 @@ html, body {
     border-radius: 50%;
     border: 2px solid var(--border);
     flex-shrink: 0;
-    cursor: pointer;
 }
 
 .idea-radio input {
-    display: none;
+    /* Visually hidden but still focusable and keyboard-operable; the label
+       row handles the click target. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    margin: 0;
 }
 
-.idea-radio input:checked + .idea-title {
+.idea-radio:has(input:checked) {
+    border-color: var(--accent);
+}
+
+.idea-radio:has(input:checked)::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.preview-stage-row:has(input:checked) .idea-title {
     color: var(--text);
     font-weight: 600;
 }

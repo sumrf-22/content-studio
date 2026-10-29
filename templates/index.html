@@ -447,11 +447,11 @@
                     let preview = '';
                     if (stage === 'idea' || stage === 'idea_review') {
                         const ideaList = ideas.map((ie, idx) =>
-                            '<div class="preview-stage-row">' +
+                            '<label class="preview-stage-row">' +
                             '<span class="idea-radio"><input type="radio" name="select-idea-' + id + '" value="' + idx + '"' + (idx === 0 ? ' checked' : '') + '></span>' +
                             '<span class="idea-title">' + escapeHtml(ie.title || '') + '</span>' +
                             '<span class="idea-format">' + escapeHtml(formatLabel(ie.format)) + '</span>' +
-                            '</div>'
+                            '</label>'
                         ).join('');
                         preview = '<div class="preview-stage">' +
                             (ideas.length ? ideaList : '<div class="empty">No ideas generated.</div>') +

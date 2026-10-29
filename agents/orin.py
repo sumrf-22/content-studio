@@ -1,8 +1,13 @@
-from pathlib import Path
+import json
+
+from core.state import DATA
+
+
 def run(item):
-    out = Path(__file__).resolve().parent.parent / "data" / "published"
-    out.mkdir(exist_ok=True)
+    """Write the local publish package for ``item`` into ``<data>/published``."""
+    out = DATA / "published"
+    out.mkdir(parents=True, exist_ok=True)
     (out / f"item_{item['id']}.json").write_text(
-        __import__("json").dumps(item, indent=2, ensure_ascii=False), encoding="utf-8"
+        json.dumps(item, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return "Saved locally (publishing is intentionally disabled in v1)."

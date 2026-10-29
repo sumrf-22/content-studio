@@ -85,6 +85,7 @@ def security_headers(response):
 
 
 from core.state import load, save, create_item, add_activity, locked
+from core.state import DATA as DATA_ROOT
 from core.models import SUPPORTED_FORMATS
 from agents.atlas import run as atlas
 from agents.vera import run as vera
@@ -126,10 +127,9 @@ def serve_asset(filename):
     route cannot read arbitrary files.
     """
     project_root = os.path.realpath(BASE_DIR)
-    allowed_roots = [
-        os.path.realpath(os.path.join(project_root, "data", "renders")),
-        os.path.realpath(os.path.join(project_root, "static", "assets")),
-    ]
+    renders_root = os.path.realpath(str(DATA_ROOT / "renders"))
+    assets_root = os.path.realpath(os.path.join(project_root, "static", "assets"))
+    allowed_roots = [renders_root, assets_root]
 
     if not filename or ".." in filename or "\\" in filename:
         return jsonify({"error": "invalid path"}), 400
@@ -138,13 +138,17 @@ def serve_asset(filename):
 
     normalized = filename.replace("\\", "/")
 
-    if normalized.startswith("data/renders/") or normalized.startswith("static/assets/"):
-        candidate = os.path.realpath(os.path.join(project_root, normalized))
+    if normalized.startswith("data/renders/"):
+        candidate = os.path.realpath(
+            os.path.join(renders_root, normalized[len("data/renders/"):])
+        )
+    elif normalized.startswith("static/assets/"):
+        candidate = os.path.realpath(
+            os.path.join(assets_root, normalized[len("static/assets/"):])
+        )
     else:
         # Legacy callers pass a path relative to static/assets.
-        candidate = os.path.realpath(
-            os.path.join(project_root, "static", "assets", normalized)
-        )
+        candidate = os.path.realpath(os.path.join(assets_root, normalized))
 
     if not any(
         candidate == root or candidate.startswith(root + os.sep)
