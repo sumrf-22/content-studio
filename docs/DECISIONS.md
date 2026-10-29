@@ -150,3 +150,31 @@ Windows denies the replace while the destination has an open handle.
 **Consequence:** Writes can take up to one extra second under contention but no
 longer fail. Multi-process deployments still need a single writer; that belongs
 to the storage phase.
+
+## D-014 — Phase 3 covers data integrity, not a database migration
+
+**Decision:** Keep `state.json` as the store for now and treat Phase 3 as data
+integrity plus cleanup: serialized mutations, collision-free ids, validated
+request bodies, and the leftover audit items. A repository interface or a real
+database moves to a later phase, after the API surface is frozen.
+
+**Why:** The pipeline is single-user and local. Concurrency and validation were
+producing real 500s and wrong-format renders; a storage rewrite would add risk
+without fixing a demonstrated failure.
+
+**Consequence:** `core/state.py` stays the only module that reads or writes
+`data/state.json`. Adding a database means reimplementing `load`, `save`,
+`create_item`, `next_id`, and `locked`, plus the tests that patch those globals.
+
+## D-015 — Ignore generated data, keep `data/` present
+
+**Decision:** `.gitignore` ignores `data/state.json`, `data/.state-*.tmp`,
+`data/renders/`, `data/published/`, `data/_backup_*/`, and `tests/artifacts/`
+instead of the whole `data/` folder. `data/.gitkeep` is tracked.
+
+**Why:** A blanket `data/` rule also hid the folder from a fresh clone, and live
+pipeline state is operator data that should not enter source history.
+
+**Consequence:** A fresh clone starts with an empty pipeline; `core/state.py`
+recreates the folder on first run. Anyone who wants seed content must copy a
+state file in explicitly.

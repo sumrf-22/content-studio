@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import tempfile
@@ -13,9 +14,22 @@ STATE = DATA / "state.json"
 # Flask's development server is threaded, so a save can race a concurrent
 # read. On Windows os.replace fails with PermissionError while another thread
 # holds the destination file open, so writes retry briefly instead of 500ing.
-_SAVE_LOCK = threading.Lock()
+# An RLock lets a route hold the lock across load -> mutate -> save.
+_SAVE_LOCK = threading.RLock()
 _REPLACE_ATTEMPTS = 20
 _REPLACE_DELAY = 0.05
+
+
+@contextlib.contextmanager
+def locked():
+    """Serialize a read-modify-write cycle against other requests."""
+    with _SAVE_LOCK:
+        yield
+
+
+def next_id(state):
+    """Return an id that cannot collide with an existing item."""
+    return max((item.get("id", 0) for item in state.get("items", [])), default=0) + 1
 
 
 def _now():
@@ -86,10 +100,15 @@ def add_activity(state, message):
 
 
 def create_item(topic):
+    with _SAVE_LOCK:
+        return _create_item(topic)
+
+
+def _create_item(topic):
     state = load()
 
     item = {
-        "id": len(state["items"]) + 1,
+        "id": next_id(state),
         "topic": topic,
         "stage": "idea",
         "status": "pending_approval",

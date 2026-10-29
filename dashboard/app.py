@@ -12,11 +12,14 @@ app = Flask(
     static_folder=STATIC_DIR
 )
 
-from core.state import load, save, create_item, add_activity
+from core.state import load, save, create_item, add_activity, locked
+from core.models import SUPPORTED_FORMATS
 from agents.atlas import run as atlas
 from agents.vera import run as vera
 from agents.kite import run as kite
 from agents.orin import run as orin
+
+MAX_TOPIC_LENGTH = 300
 
 
 # Single action vocabulary shared with templates/index.html.
@@ -98,15 +101,54 @@ def serve_asset(filename):
 
 @app.post("/api/idea")
 def idea():
-    topic = request.json.get("topic", "").strip()
+    payload = request.get_json(silent=True) or {}
+    topic = str(payload.get("topic") or "").strip()
     if not topic:
         return jsonify({"error": "topic required"}), 400
+    if len(topic) > MAX_TOPIC_LENGTH:
+        return jsonify({
+            "error": f"topic must be {MAX_TOPIC_LENGTH} characters or fewer"
+        }), 400
     item = create_item(topic)
     return jsonify(item)
 
 
 @app.post("/api/action/<int:item_id>")
 def action(item_id):
+    # One mutation at a time: the handler loads state, mutates it, and saves it.
+    with locked():
+        return _handle_action(item_id)
+
+
+def _resolve_idea(item, selected):
+    """Return the idea whose title matches ``selected``, or None.
+
+    Exact match first, then a case-insensitive exact match. Substring matching
+    was ambiguous when two ideas shared a phrase, so it is intentionally gone.
+    """
+    ideas = [idea for idea in (item.get("ideas") or []) if isinstance(idea, dict)]
+    for idea in ideas:
+        if idea.get("title") == selected:
+            return idea
+    lowered = selected.lower()
+    for idea in ideas:
+        if str(idea.get("title", "")).lower() == lowered:
+            return idea
+    return None
+
+
+def _render_failed(result):
+    """True when Kite reported a problem and produced no usable asset."""
+    if not isinstance(result, dict) or not result.get("note"):
+        return False
+    assets = (
+        result.get("slides") or result.get("frames")
+        or result.get("scenes") or result.get("text_file")
+    )
+    return not assets
+
+
+def _handle_action(item_id):
     payload = request.get_json(silent=True) or {}
     action = payload.get("action")
 
@@ -155,16 +197,13 @@ def action(item_id):
 
         item["selected_idea"] = selected
 
-        # Extract the format from the selected idea
-        selected_format = "CAROUSEL"
-        if item.get("ideas"):
-            for idea in item["ideas"]:
-                if isinstance(idea, dict) and idea.get("title") == selected:
-                    selected_format = idea.get("format", "CAROUSEL")
-                    break
-                elif isinstance(idea, dict) and selected.lower() in idea.get("title", "").lower():
-                    selected_format = idea.get("format", "CAROUSEL")
-                    break
+        idea = _resolve_idea(item, selected)
+        if idea is None:
+            return jsonify({"error": "selected idea is not in this item's ideas"}), 400
+
+        selected_format = str(idea.get("format") or "CAROUSEL").upper()
+        if selected_format not in SUPPORTED_FORMATS:
+            selected_format = "CAROUSEL"
 
         item["format"] = selected_format
         item["copy"] = vera(selected, selected_format)
@@ -186,6 +225,11 @@ def action(item_id):
         # gets the dict directly (no lossy re-serialization).
         fmt = item.get("format", "CAROUSEL").upper()
         design_result = kite(item_id, item["copy"], fmt)
+
+        if _render_failed(design_result):
+            return jsonify({
+                "error": "Kite could not render: " + str(design_result.get("note"))
+            }), 400
 
         item["design"] = design_result
         item["stage"] = "design"
@@ -252,6 +296,10 @@ def action(item_id):
             if not item.get("copy"):
                 return jsonify({"error": "cannot regenerate design: no copy data"}), 400
             design_result = kite(item_id, item["copy"], fmt or "CAROUSEL")
+            if _render_failed(design_result):
+                return jsonify({
+                    "error": "Kite could not render: " + str(design_result.get("note"))
+                }), 400
             item["design"] = design_result
             add_activity(s, f"Kite regenerated design for item {item_id} (reject -> regenerate)")
         else:

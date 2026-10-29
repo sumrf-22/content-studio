@@ -17,13 +17,13 @@
             <nav class="sidebar-nav">
                 <ul>
                     <li><a href="#" class="active" data-section="dashboard"><span class="nav-icon">&#x25A4;</span> Dashboard</a></li>
-                    <li><a href="#" data-section="content-studio"><span class="nav-icon">&#x25B2;</span> Content Studio</a></li>
-                    <li><a href="#" data-section="ideas"><span class="nav-icon">&#x2726;</span> Ideas</a></li>
-                    <li><a href="#" data-section="pipeline"><span class="nav-icon">&#x25B7;</span> Content Pipeline</a></li>
-                    <li><a href="#" data-section="assets"><span class="nav-icon">&#x2603;</span> Assets</a></li>
-                    <li><a href="#" data-section="projects"><span class="nav-icon">&#x224B;</span> Projects</a></li>
-                    <li><a href="#" data-section="analytics"><span class="nav-icon">&#x25A3;</span> Analytics</a></li>
-                    <li><a href="#" data-section="settings"><span class="nav-icon">&#x2699;</span> Settings</a></li>
+                    <li><a href="#" data-section="content-studio" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25B2;</span> Content Studio</a></li>
+                    <li><a href="#" data-section="ideas" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2726;</span> Ideas</a></li>
+                    <li><a href="#" data-section="pipeline" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25B7;</span> Content Pipeline</a></li>
+                    <li><a href="#" data-section="assets" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2603;</span> Assets</a></li>
+                    <li><a href="#" data-section="projects" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x224B;</span> Projects</a></li>
+                    <li><a href="#" data-section="analytics" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x25A3;</span> Analytics</a></li>
+                    <li><a href="#" data-section="settings" class="nav-disabled" aria-disabled="true" title="Not available in this version"><span class="nav-icon">&#x2699;</span> Settings</a></li>
                 </ul>
             </nav>
             <div class="sidebar-footer">
@@ -616,14 +616,13 @@
         document.querySelectorAll('.sidebar-nav a').forEach(a => {
             a.addEventListener('click', function(e) {
                 e.preventDefault();
+                // Sections outside the dashboard are marked nav-disabled in the
+                // markup; they stay visible so the roadmap is obvious but do
+                // not pretend to navigate anywhere.
+                if (this.getAttribute('aria-disabled') === 'true') return;
                 document.querySelectorAll('.sidebar-nav a').forEach(x => x.classList.remove('active'));
                 this.classList.add('active');
-                const section = this.dataset.section;
-                if (section === 'dashboard') {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else {
-                    alert('Navigating to: ' + section + ' (not yet implemented)');
-                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         });
 

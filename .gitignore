@@ -2,5 +2,16 @@
 .venv/
 __pycache__/
 *.pyc
-data/
 .pytest_cache/
+
+# Runtime data. The app recreates the folder on first run; a fresh clone starts
+# with an empty pipeline on purpose. Backups are local-only too.
+data/state.json
+data/.state-*.tmp
+data/renders/
+data/published/
+data/_backup_*/
+tests/artifacts/
+
+# Keep the empty folder (and anything an operator chooses to place there).
+!data/.gitkeep

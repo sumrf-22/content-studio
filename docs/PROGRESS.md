@@ -244,3 +244,96 @@ backup at `data/_backup_20261029_092442/` is unchanged.
 ### Next steps
 - Phase 3: storage/repository work and the remaining audit issues (CSS duplicates,
   sidebar placeholders, legacy artifact cleanup).
+
+## Phase 3 — Data integrity and cleanup (2026-10-29)
+
+**Status:** complete.
+
+### Scope decision
+
+The audit plan left Phase 3 as "storage". It is delivered as **data integrity +
+workspace cleanup**: the JSON store stays behind `core/state.py`, mutation
+endpoints run one at a time, ids cannot collide, request bodies are validated,
+the `.gitignore` now targets generated data, and the leftover audit issues
+(duplicate CSS, purple-vs-green theme drift, sidebar placeholders, orphan render
+artifacts) are resolved (D-014, D-015).
+
+### Reproductions and evidence (pre-fix, commit `837f738`)
+
+1. **Ten duplicated CSS selectors.** Counting rules in `git show
+   837f738:static/style.css` returned `.approval-card`, `.approval-list`,
+   `.approval-item`, `.approval-item:hover`, `.approval-head`, `.approval-badge`,
+   `.approval-badge-idea`, `.approval-badge-copy`, `.approval-badge-design`, and
+   `.approval-actions` twice each. The first `.approval-item` used a row layout
+   and the second a column layout, so the cascade silently decided the UI.
+2. **Theme drift.** Ten declarations still used the old purple accent
+   `rgba(108, 92, 231, …)` while `--accent` is `#22c55e`, including sidebar hover,
+   the sidebar active pill, `.btn-primary:hover`, `.preview-header`, and
+   `.status-running`.
+3. **Sidebar placeholders.** Every non-dashboard link ran
+   `alert('Navigating to: ' + section + ' (not yet implemented)')` and still
+   received the `active` class, so the UI claimed a section that does not exist.
+4. **Orphan render artifacts.** `data/renders/` held two placeholder folders
+   (`item_pending`, `item_placeholder`), ten `item_*` folders with no matching
+   state entry (18, 19, 99, 100–106, 999), three stray root PNGs
+   (`item_1_slide_1.png`, `item_2_slide_1.png`, `item_4_slide_1.png`), and
+   `data/imgbb_test.png`.
+5. **Id generation could collide.** `create_item()` used
+   `id = len(items) + 1`; removing any item would make the next id reuse an
+   existing one.
+6. **Unvalidated request bodies.** `POST /api/idea` read `request.json.topic`
+   directly, and `select_idea` matched the selected title by substring, so a
+   partial title could resolve to the wrong format.
+
+### Changes
+
+- `core/state.py`: `next_id()` (max + 1), `locked()` context manager backed by an
+  `RLock`, and `create_item()` holds that lock for its read-modify-write.
+- `dashboard/app.py`: `action()` wraps `_handle_action()` in `locked()`;
+  `_resolve_idea()` replaces substring matching with exact then case-insensitive
+  exact matching and returns 400 for an unknown title; the selected format is
+  validated against `core.models.SUPPORTED_FORMATS`; `_render_failed()` returns
+  400 instead of storing an empty design when Kite reports a problem; topics are
+  required and capped at 300 characters; `request.get_json(silent=True)` replaces
+  `request.json`.
+- `static/style.css`: removed the ten duplicate approval rules (kept one
+  authoritative block and the shared `.btn-sm`), converted all purple accents to
+  the green theme, added `.sidebar-nav a.nav-disabled`.
+- `templates/index.html`: seven non-dashboard sections are marked
+  `nav-disabled`/`aria-disabled` and no longer alert or steal the active state.
+- `.gitignore`: narrowed from `data/` to `data/state.json`,
+  `data/.state-*.tmp`, `data/renders/`, `data/published/`, `data/_backup_*/`, and
+  `tests/artifacts/`; `data/.gitkeep` keeps the folder in a fresh clone.
+- `tests/test_phase3.py`: id collision, 8-way concurrent create, missing/overlong
+  topic, unknown selected idea, exact-vs-substring selection, unknown format
+  fallback.
+
+### Cleanup performed
+
+`data/_backup_20261029_phase3/` now holds the 17 orphan artifacts listed above
+(plus `MANIFEST.json` with the state ids that were kept). Nothing was deleted;
+everything was moved out of `data/renders/` after the copy, and the verified
+Phase 0 backup is untouched.
+
+### Verification
+
+- Browser, mock mode: created item 16 (`Phase 3 check carousel`) and ran
+  create → Generate Ideas → Use Selected Idea → Approve Copy → Approve Design →
+  Publish. Result: `stage=done`, `status=published_local`, 3 slides,
+  preview images 1080×1350 loaded.
+- Clean reload and navigation clicks: zero alerts from the sidebar, only
+  `Dashboard` can become active.
+- Console errors: none. All captured `/api/` responses < 400.
+- `pytest -q`: `32 passed in 55.35s`.
+
+### Data changes
+
+Item 16 created and published. Orphan renders moved to the Phase 3 backup.
+`data/state.json` remains untracked by design.
+
+### Blockers
+- None.
+
+### Next steps
+- Phase 4: security posture — `debug=False` default, bind `127.0.0.1`, token for
+  non-localhost, CSRF, path-traversal tests, `docs/SECURITY.md`.
